@@ -7,19 +7,19 @@ Welcome to the future of education! This **LMS** is a high-fidelity, professiona
 ## 🎨 System Previews
 
 ### 🔐 Secure & Professional Access
-![Login Page](assets/images/login.png)
+![Login Page](https://websitetester.free.nf/uploads/fab5943e-41b3-4c50-be95-e4f315d8c167.png)
 *A sleek, modern login interface designed for security and ease of use.*
 
 ---
 
 ### 👑 Admin Power Dashboard
-![Admin Dashboard](assets/images/admin_dash.png)
+![Admin Dashboard](https://websitetester.free.nf/uploads/faa2478a-3a97-4c7e-854e-7115724e0de3.png)
 *Complete control over batches, courses, and student progress with real-time analytics.*
 
 ---
 
 ### 🧑‍🎓 Stunning Student Experience
-![Student Dashboard](assets/images/student_dash.png)
+![Student Dashboard](https://websitetester.free.nf/uploads/d097b5ae-7132-4851-b97e-a9bfad7978fe.png)
 *A premium learning experience featuring progress tracking, curriculum navigation, and AI-powered study aids.*
 
 ---
