@@ -1,0 +1,19 @@
+# Error Pages
+ErrorDocument 404 /404.php
+ErrorDocument 403 /403.php
+
+# Prevent Directory Listing
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Optional: If you want to force HTTPS or handle subdirectories, add it here.
+    # RewriteBase /
+
+    # Handle 404 for truly non-existent files
+    # The -f and -d checks ensure we don't 404 valid files or directories
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . /404.php [L]
+</IfModule>
