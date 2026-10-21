@@ -1,0 +1,14 @@
+/config/config.php
+/storage/install.lock
+/storage/*.sqlite
+/storage/*.sqlite-*
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/backups/*
+!/storage/backups/.gitkeep
+/storage/uploads/*
+!/storage/uploads/.gitkeep
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
