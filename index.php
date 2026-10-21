@@ -4,10 +4,13 @@ require __DIR__ . '/includes/bootstrap.php';
 
 use OpenLMS\Core\Csrf;
 use OpenLMS\Services\Installer;
+use OpenLMS\Services\Migrator;
 use OpenLMS\Controllers\AuthController;
 use OpenLMS\Controllers\DashboardController;
 use OpenLMS\Controllers\AdminController;
 use OpenLMS\Controllers\DiagnosticsController;
+use OpenLMS\Controllers\AcademicController;
+use OpenLMS\Controllers\LearningController;
 
 $configFile = __DIR__ . '/config/config.php';
 $lockFile = __DIR__ . '/storage/install.lock';
@@ -45,10 +48,17 @@ if (!$installed) {
 if ($route === 'install') { http_response_code(404); render_page('Not found','<div class="card"><h2>Installer locked</h2><p>Open LMS is already installed.</p></div>'); exit; }
 
 try {
+    Migrator::migrateConfigured();
     match ($route) {
         'login' => AuthController::login(),
         'logout' => AuthController::logout(),
         'dashboard' => DashboardController::show(),
+        'academics' => AcademicController::index(),
+        'subjects' => LearningController::subjects(),
+        'subject' => LearningController::subject(),
+        'course' => LearningController::course(),
+        'lesson' => LearningController::lesson(),
+        'material-download' => LearningController::download(),
         'users' => AdminController::users(),
         'features' => AdminController::features(),
         'audit' => AdminController::audit(),

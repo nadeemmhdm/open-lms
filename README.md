@@ -4,7 +4,7 @@ Open LMS is a lightweight, modular Learning Management System built for shared P
 
 ## Current implementation status
 
-This repository currently contains the secure platform foundation (Phase 1) and database foundations for later LMS modules:
+This repository currently contains the secure platform foundation (Phase 1) plus the completed academic/learning workflows in Phase 2:
 
 - First-run web installer with server diagnostics.
 - First Super Admin account creation during installation.
@@ -20,9 +20,22 @@ This repository currently contains the secure platform foundation (Phase 1) and 
 - Audit logging.
 - Safe diagnostics page that does not display secrets or private filesystem paths.
 - Responsive light/dark admin UI.
-- Normalized schema for academic structure, courses, lessons, attendance, question bank, exams, projects, gradebook, notifications and security records.
+- Academic years, departments, classes, sections, batches and semesters.
+- Student-to-batch membership and course-to-batch assignment.
+- Responsive subject cards with teacher/course/lesson/progress data.
+- Course creation, teacher ownership, draft/published/archive states and student enrollment.
+- Ordered course sections and lesson creation/reordering.
+- Lesson rich-text formatting with a server-side safe HTML allowlist.
+- Learning objectives, instructions, duration, scheduled release and lesson prerequisites.
+- Secure private lesson-material uploads and authorization-checked downloads.
+- PDF, DOC, DOCX, PPT, PPTX, JPEG, PNG, WebP, MP4 and ZIP validation by extension, MIME type and file signature.
+- External lesson links plus restricted YouTube/Vimeo video embedding.
+- Student lesson completion and course/subject progress tracking.
+- Resource ownership checks so teachers can only manage their assigned courses.
+- Versioned automatic schema upgrade from Phase 1 through `002_phase2`.
+- Normalized schema foundations for later attendance, quiz, exam, project, gradebook, notification and reporting phases.
 
-The schema for Phases 2-6 is present so later module work can be added without destructive database recreation. UI/workflow implementation for those later phases is intentionally not claimed as complete yet.
+Phases 3-6 are not claimed as complete yet.
 
 ## Requirements
 
@@ -35,6 +48,7 @@ Recommended runtime:
 - PHP sessions.
 - OpenSSL functions recommended for future MFA secret encryption.
 - Writable `config/` and `storage/` directories during first installation.
+- PHP Fileinfo extension for secure upload MIME inspection.
 
 ## InfinityFree deployment
 
@@ -72,7 +86,7 @@ Do not upload an extra wrapper folder such as `htdocs/open-lms/index.php` unless
 7. Enter the institution name.
 8. Enter the first Super Admin name, email and a password of at least 12 characters.
 9. Submit the installer.
-10. The installer runs schema migration `001_init_mysql.sql`, creates roles/permissions, creates the first Super Admin, writes `config/config.php`, and creates `storage/install.lock`.
+10. The installer applies all current MySQL migrations (`001_init_mysql.sql`, `002_phase2_mysql.sql`), creates roles/permissions, creates the first Super Admin, writes `config/config.php`, and creates `storage/install.lock`.
 11. You are redirected to the sign-in page.
 
 After installation, requesting the installer route returns an installer-locked page.
@@ -88,7 +102,9 @@ After installation, requesting the installer route returns an installer-locked p
 - Login attempts are rate-limited by email + IP within a configurable window.
 - Ordinary admin user-management actions cannot suspend a Super Admin account.
 - Private errors are logged server-side; visitors receive a generic server error page.
-- Uploaded/private LMS files are intended to live under `storage/` and are blocked from direct web access.
+- Uploaded/private LMS files live under `storage/uploads/`, use random `.dat` server filenames, and are blocked from direct web access. Downloads are streamed only after course/lesson authorization checks.
+- Uploads are checked by extension, server-detected MIME type, maximum size and file signature; PHP/executable uploads are not accepted.
+- Teachers can manage only courses assigned to their account; student access requires explicit enrollment or membership in an assigned batch.
 
 Before public use, enable HTTPS for your domain and verify that direct requests to `/config/config.php`, `/database/`, and `/storage/` are denied.
 
@@ -98,13 +114,13 @@ Before public use, enable HTTPS for your domain and verify that direct requests 
 
 Recommended for InfinityFree. This is the default installer option and uses:
 
-`database/migrations/001_init_mysql.sql`
+`database/migrations/001_init_mysql.sql` and `database/migrations/002_phase2_mysql.sql`
 
 ### SQLite
 
 Available only when the server exposes the `pdo_sqlite` PDO driver and the application can safely write to `storage/`. The installer checks this before allowing SQLite setup. It uses:
 
-`database/migrations/001_init_sqlite.sql`
+`database/migrations/001_init_sqlite.sql` and `database/migrations/002_phase2_sqlite.sql`
 
 If the host cannot safely support SQLite, use MySQL/MariaDB instead.
 
@@ -127,7 +143,7 @@ The repository does not require npm or a build step.
 ```text
 app/Core/          configuration, database, auth, CSRF
 app/Controllers/   request handlers
-app/Services/      installer and service classes
+app/Services/      installer, migrations and secure upload services
 app/Middleware/    authorization middleware foundation
 app/Policies/      resource policy foundation
 assets/            responsive CSS and vanilla JS
@@ -142,15 +158,18 @@ tests/             local verification scripts/checklists
 
 ## Hosting limitations to account for
 
-Free shared hosting may impose fixed upload/file limits, execution-time limits and restrictions on automated background requests. Open LMS therefore does not depend on cron jobs, persistent workers or server-side daemons. Large videos should be externally hosted/embedded instead of stored as application uploads.
+Free shared hosting may impose fixed upload/file limits, execution-time limits and restrictions on automated background requests. Open LMS therefore does not depend on cron jobs, persistent workers or server-side daemons. The application upload policy defaults to 10 MB but the effective limit can be lower if the host enforces a smaller PHP upload limit. Large videos should be externally hosted/embedded instead of stored as application uploads.
 
 ## Testing performed for this commit
 
-The project is linted with PHP 8.4 CLI. Installer HTML can be rendered without an existing database configuration. Full database integration tests require a runtime with `pdo_mysql` or `pdo_sqlite`; the local verification environment used for this commit exposes PDO core but no PDO database drivers, so database connection/migration execution is not falsely reported as tested.
+- Every PHP file passes syntax lint using PHP 8.4 CLI.
+- `assets/js/app.js` passes JavaScript syntax validation.
+- Both SQLite migrations were executed in a temporary database and the Phase 2 relationships were exercised: batch membership, course-to-batch access and lesson progress all passed.
+- Phase 2 permission seeding for administrator/teacher/HOD/examiner roles was verified in the SQLite smoke database.
+- The current local PHP CLI exposes PDO core but not `pdo_mysql` or `pdo_sqlite`, so an end-to-end PHP database session was not falsely reported as tested. MySQL/MariaDB integration must still be verified on the target InfinityFree database before calling the deployment production-ready.
 
 ## Next phases
 
-- Phase 2: academic years/classes/batches/semesters, subject cards, course cards, lesson manager, secure uploads, progress tracking.
 - Phase 3: attendance, reusable question bank, quizzes, gradebook.
 - Phase 4: exam attempts, autosave, expiry, event logging, grading/results.
 - Phase 5: projects, submission versioning, grading and feedback.

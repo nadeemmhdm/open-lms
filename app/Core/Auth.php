@@ -1,17 +1,25 @@
 <?php
 namespace OpenLMS\Core;
 
+use PDO;
+
 final class Auth
 {
     public static function user(): ?array
     {
-        if (empty($_SESSION['user_id'])) return null;
+        if (empty($_SESSION['user_id'])) {
+            return null;
+        }
         $pdo = Database::connection();
         $stmt = $pdo->prepare('SELECT id, name, email, status, created_at FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([(int) $_SESSION['user_id']]);
         $user = $stmt->fetch();
-        if (!$user || $user['status'] !== 'active') { self::logout(); return null; }
-        $user['roles'] = self::roles((int) $user['id']);
+        if (!$user || $user['status'] !== 'active') {
+            self::logout();
+            return null;
+        }
+        $roles = self::roles((int) $user['id']);
+        $user['roles'] = $roles;
         return $user;
     }
 
@@ -29,10 +37,49 @@ final class Auth
         return $user && in_array($role, $user['roles'], true);
     }
 
+    private static array $permissionCache = [];
+
+    public static function hasAnyRole(array $roles): bool
+    {
+        $user = self::user();
+        return $user && (bool) array_intersect($roles, $user['roles']);
+    }
+
+    public static function permissions(?int $userId = null): array
+    {
+        $userId = $userId ?? (int) ($_SESSION['user_id'] ?? 0);
+        if ($userId < 1) return [];
+        if (isset(self::$permissionCache[$userId])) return self::$permissionCache[$userId];
+        $roles = self::roles($userId);
+        if (in_array('super_admin', $roles, true)) {
+            $all = Database::connection()->query('SELECT name FROM permissions')->fetchAll(PDO::FETCH_COLUMN);
+            return self::$permissionCache[$userId] = array_values($all);
+        }
+        $stmt = Database::connection()->prepare('SELECT DISTINCT p.name FROM permissions p INNER JOIN role_permissions rp ON rp.permission_id=p.id INNER JOIN user_roles ur ON ur.role_id=rp.role_id WHERE ur.user_id=?');
+        $stmt->execute([$userId]);
+        return self::$permissionCache[$userId] = array_column($stmt->fetchAll(), 'name');
+    }
+
+    public static function can(string $permission): bool
+    {
+        return in_array($permission, self::permissions(), true);
+    }
+
+    public static function requirePermission(string $permission): void
+    {
+        self::requireAuth();
+        if (!self::can($permission)) {
+            http_response_code(403);
+            render_page('Access denied', '<div class="card"><h2>403</h2><p>You do not have permission to access this page.</p></div>');
+            exit;
+        }
+    }
+
     public static function isPrivileged(): bool
     {
         $user = self::user();
-        return $user && (bool) array_intersect(['super_admin','administrator'], $user['roles']);
+        if (!$user) return false;
+        return (bool) array_intersect(['super_admin', 'administrator'], $user['roles']);
     }
 
     public static function attempt(string $email, string $password, string $ip): array
@@ -42,23 +89,34 @@ final class Auth
         $window = max(1, (int) Config::get('security.login_window_minutes', 15));
         $max = max(3, (int) Config::get('security.login_max_attempts', 5));
         $cutoff = gmdate('Y-m-d H:i:s', time() - ($window * 60));
+
         $stmt = $pdo->prepare('SELECT COUNT(*) FROM login_attempts WHERE email = ? AND ip_address = ? AND successful = 0 AND attempted_at >= ?');
         $stmt->execute([$email, $ip, $cutoff]);
-        if ((int) $stmt->fetchColumn() >= $max) return [false, 'Too many failed login attempts. Try again later.'];
+        if ((int) $stmt->fetchColumn() >= $max) {
+            return [false, 'Too many failed login attempts. Try again later.'];
+        }
 
         $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ? LIMIT 1');
         $stmt->execute([$email]);
         $user = $stmt->fetch();
         $ok = $user && $user['status'] === 'active' && password_verify($password, $user['password_hash']);
-        $pdo->prepare('INSERT INTO login_attempts (email, ip_address, successful, attempted_at) VALUES (?, ?, ?, ?)')->execute([$email, $ip, $ok ? 1 : 0, gmdate('Y-m-d H:i:s')]);
-        if (!$ok) return [false, 'Invalid email or password.'];
+
+        $log = $pdo->prepare('INSERT INTO login_attempts (email, ip_address, successful, attempted_at) VALUES (?, ?, ?, ?)');
+        $log->execute([$email, $ip, $ok ? 1 : 0, gmdate('Y-m-d H:i:s')]);
+
+        if (!$ok) {
+            return [false, 'Invalid email or password.'];
+        }
 
         if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
-            $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
+            $hash = password_hash($password, PASSWORD_DEFAULT);
+            $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([$hash, $user['id']]);
         }
+
         session_regenerate_id(true);
         $_SESSION['user_id'] = (int) $user['id'];
         $_SESSION['authenticated_at'] = time();
+        self::$permissionCache = [];
         Csrf::rotate();
         self::audit('auth.login', 'User signed in', (int) $user['id']);
         return [true, null];
@@ -66,7 +124,10 @@ final class Auth
 
     public static function logout(): void
     {
-        if (!empty($_SESSION['user_id'])) { try { self::audit('auth.logout', 'User signed out', (int) $_SESSION['user_id']); } catch (\Throwable) {} }
+        if (!empty($_SESSION['user_id'])) {
+            try { self::audit('auth.logout', 'User signed out', (int) $_SESSION['user_id']); } catch (\Throwable) {}
+        }
+        self::$permissionCache = [];
         $_SESSION = [];
         if (ini_get('session.use_cookies')) {
             $p = session_get_cookie_params();
@@ -77,7 +138,10 @@ final class Auth
 
     public static function requireAuth(): void
     {
-        if (!self::user()) { header('Location: ' . app_url('?r=login')); exit; }
+        if (!self::user()) {
+            header('Location: ' . app_url('?r=login'));
+            exit;
+        }
     }
 
     public static function requireAdmin(): void
@@ -93,6 +157,10 @@ final class Auth
     public static function audit(string $action, string $description, ?int $actorUserId = null, ?string $entityType = null, ?int $entityId = null): void
     {
         $pdo = Database::connection();
-        $pdo->prepare('INSERT INTO audit_logs (actor_user_id, action, description, entity_type, entity_id, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')->execute([$actorUserId ?? ($_SESSION['user_id'] ?? null), $action, $description, $entityType, $entityId, client_ip(), gmdate('Y-m-d H:i:s')]);
+        $stmt = $pdo->prepare('INSERT INTO audit_logs (actor_user_id, action, description, entity_type, entity_id, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([
+            $actorUserId ?? ($_SESSION['user_id'] ?? null), $action, $description, $entityType, $entityId,
+            client_ip(), gmdate('Y-m-d H:i:s')
+        ]);
     }
 }
