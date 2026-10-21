@@ -22,7 +22,7 @@ python3 tests/security_static.py
 
 `tests/qrcode_smoke.js` verifies the local bundled QR encoder can produce an SVG from an authenticator provisioning URI without a network service.
 
-`tests/security_static.py` scans rendered POST forms for CSRF fields and guards against regressions in Super Admin elevation, MFA reset/challenge throttling, module gating, announcement scope, report scope and timetable batch privacy.
+`tests/security_static.py` scans rendered POST forms for CSRF fields and guards against regressions in Super Admin elevation, MFA reset/challenge throttling, module gating (including announcements/search/backup), announcement scope, report scope and timetable batch privacy.
 
 ## Manual/target-host acceptance checklist
 
@@ -55,3 +55,11 @@ Before public use on InfinityFree/MySQL:
 ## Current build-environment limitation
 
 The build environment used for the final local verification has PHP 8.4 but exposes no PHP PDO database drivers (`PDO::getAvailableDrivers()` is empty) and also lacks mbstring. Therefore PHP syntax/crypto logic and the first-run diagnostics page can be tested here, while a real PHP PDO MySQL session cannot. Python's SQLite runtime is used for schema/integrity smoke tests. This limitation is why live target-host acceptance remains mandatory.
+
+## Final hardening checks
+
+- Installer seed creation is transaction-protected after schema migration.
+- Installer errors are logged privately and returned to visitors as sanitized actionable categories.
+- One-time password reset tokens are consumed atomically before a password change.
+- Encrypted restore updates backup history before database commit so a post-commit history failure cannot desynchronize restored database/upload state.
+- Search, announcements and backup/restore are controlled by server-side feature gates, not navigation visibility alone.

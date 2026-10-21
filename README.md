@@ -49,15 +49,16 @@ Phases 1–6 are implemented in this repository.
 - Rubric data, marks, feedback, grading history and gradebook propagation.
 
 ### Phase 6 — operational modules and hardening
-- Personal notifications and scoped announcements.
+- Personal notifications and independently configurable scoped announcements.
 - Reports/analytics and teacher-workload/course metrics with role-aware data scope.
 - Verifiable/revocable course-completion certificates.
 - Weekly timetable and optional external live-class links with batch privacy controls.
 - Optional parent/guardian read-only portal for explicitly linked students.
 - Optional fee invoice/payment-recording module (not a payment gateway).
-- Authorization-aware search.
-- Encrypted application backup/restore including referenced private upload bytes.
+- Authorization-aware search with a server-side module switch.
+- Configurable encrypted application backup/restore including referenced private upload bytes.
 - Versioned migrations through `006_phase6` plus final security/regression tests.
+- Server-side module switches for optional announcements, search, backup/restore, certificates, timetable/live classes, parent portal and fee management.
 
 ## Runtime requirements
 

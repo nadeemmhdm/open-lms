@@ -59,3 +59,7 @@ The application does not include a mandatory malware-scanning daemon because the
 ## Production-readiness statement
 
 Local lint/schema/crypto smoke tests are documented in `TESTING.md`. A live MySQL/MariaDB/InfinityFree acceptance run is still required before describing a deployment as production-ready.
+
+## Final hardening notes
+
+Password-reset token consumption uses a conditional database update inside the password-change transaction. Installer failures are logged server-side while public setup errors are sanitized. Backup restore keeps its database history update inside the restore transaction before commit and rolls staged uploads back on restore failure. Optional announcements, search and backup/restore reject direct requests when disabled.
