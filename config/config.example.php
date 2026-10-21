@@ -25,6 +25,6 @@ return [
         'session_name' => 'open_lms_session',
         'login_max_attempts' => 5,
         'login_window_minutes' => 15,
-        'require_mfa_for_super_admin' => false,
+        'require_mfa_for_super_admin' => true,
     ],
 ];

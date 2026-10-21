@@ -75,6 +75,31 @@ final class UploadService
         }
     }
 
+    public static function storeProjectSubmissionFile(int $submissionId, array $file, array $allowedExtensions, int $maxBytes): array
+    {
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return [false, self::uploadError((int)($file['error'] ?? UPLOAD_ERR_NO_FILE))];
+        }
+        $tmp=(string)($file['tmp_name']??''); $size=(int)($file['size']??0); $original=self::safeOriginalName((string)($file['name']??'file'));
+        $ext=strtolower(pathinfo($original,PATHINFO_EXTENSION)); $allowed=array_values(array_intersect(array_keys(self::MIME_BY_EXT),array_map('strtolower',$allowedExtensions)));
+        if(!in_array($ext,$allowed,true)) return [false,'This file type is not allowed for the project.'];
+        $limit=max(1024*1024,$maxBytes); if($size<1||$size>$limit)return [false,'File size is outside the project upload limit ('.self::humanBytes($limit).').'];
+        if(!is_uploaded_file($tmp))return [false,'Upload source validation failed.'];
+        $finfo=new \finfo(FILEINFO_MIME_TYPE);$mime=(string)$finfo->file($tmp);if(!in_array($mime,self::MIME_BY_EXT[$ext],true))return [false,'The file content does not match its extension.'];
+        if(!self::signatureMatches($tmp,$ext))return [false,'The file signature is invalid for this file type.'];
+        $relativeDir='projects/'.$submissionId;$absoluteDir=app_root().'/storage/uploads/'.$relativeDir;if(!is_dir($absoluteDir)&&!mkdir($absoluteDir,0750,true)&&!is_dir($absoluteDir))return [false,'Unable to create private upload directory.'];
+        $stored=bin2hex(random_bytes(24)).'.dat';$relative=$relativeDir.'/'.$stored;$absolute=app_root().'/storage/uploads/'.$relative;if(!move_uploaded_file($tmp,$absolute))return [false,'Unable to store uploaded file.'];@chmod($absolute,0640);
+        try{Database::connection()->prepare('INSERT INTO submission_files (submission_id,original_name,stored_name,mime_type,size_bytes,created_at) VALUES (?,?,?,?,?,?)')->execute([$submissionId,$original,$relative,$mime,$size,gmdate('Y-m-d H:i:s')]);return [true,(int)Database::connection()->lastInsertId()];}
+        catch(\Throwable $e){@unlink($absolute);throw $e;}
+    }
+
+    public static function deleteSubmissionFile(array $file): void
+    {
+        $absolute=self::resolveStoredPath((string)($file['stored_name']??''));
+        Database::connection()->prepare('DELETE FROM submission_files WHERE id=?')->execute([(int)$file['id']]);
+        if($absolute&&is_file($absolute))@unlink($absolute);
+    }
+
     public static function deleteMaterial(array $material): void
     {
         $relative = (string) ($material['stored_name'] ?? '');

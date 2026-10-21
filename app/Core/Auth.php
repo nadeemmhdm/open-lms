@@ -37,6 +37,7 @@ final class Auth
         return $user && in_array($role, $user['roles'], true);
     }
 
+
     private static array $permissionCache = [];
 
     public static function hasAnyRole(array $roles): bool
@@ -113,13 +114,57 @@ final class Auth
             $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([$hash, $user['id']]);
         }
 
+        $mfa = $pdo->prepare('SELECT COUNT(*) FROM mfa_credentials WHERE user_id=? AND enabled_at IS NOT NULL');
+        $mfa->execute([(int)$user['id']]);
+        if ((int)$mfa->fetchColumn() > 0) {
+            session_regenerate_id(true);
+            $_SESSION['mfa_pending_user_id'] = (int)$user['id'];
+            $_SESSION['mfa_pending_started_at'] = time();
+            $_SESSION['mfa_pending_attempts'] = 0;
+            $_SESSION['mfa_pending_locked_until'] = 0;
+            unset($_SESSION['user_id']);
+            Csrf::rotate();
+            return [true, 'mfa'];
+        }
+
+        self::finishLogin((int)$user['id']);
+        return [true, null];
+    }
+
+
+    public static function finishLogin(int $userId): void
+    {
         session_regenerate_id(true);
-        $_SESSION['user_id'] = (int) $user['id'];
+        unset($_SESSION['mfa_pending_user_id'], $_SESSION['mfa_pending_started_at'], $_SESSION['mfa_pending_attempts'], $_SESSION['mfa_pending_locked_until']);
+        $_SESSION['user_id'] = $userId;
         $_SESSION['authenticated_at'] = time();
         self::$permissionCache = [];
         Csrf::rotate();
-        self::audit('auth.login', 'User signed in', (int) $user['id']);
-        return [true, null];
+        try {
+            Database::connection()->prepare('UPDATE users SET last_login_at=?,updated_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s'),$userId]);
+        } catch (\Throwable) {}
+        self::audit('auth.login', 'User signed in', $userId);
+    }
+
+    public static function verifyCurrentPassword(string $password): bool
+    {
+        $userId = (int)($_SESSION['user_id'] ?? 0);
+        if ($userId < 1) return false;
+        $stmt = Database::connection()->prepare('SELECT password_hash FROM users WHERE id=? AND status=\'active\'');
+        $stmt->execute([$userId]);
+        $hash = $stmt->fetchColumn();
+        return is_string($hash) && password_verify($password, $hash);
+    }
+
+    public static function mfaEnabled(?int $userId = null): bool
+    {
+        $userId = $userId ?? (int)($_SESSION['user_id'] ?? 0);
+        if ($userId < 1) return false;
+        try {
+            $stmt = Database::connection()->prepare('SELECT COUNT(*) FROM mfa_credentials WHERE user_id=? AND enabled_at IS NOT NULL');
+            $stmt->execute([$userId]);
+            return (int)$stmt->fetchColumn() > 0;
+        } catch (\Throwable) { return false; }
     }
 
     public static function logout(): void

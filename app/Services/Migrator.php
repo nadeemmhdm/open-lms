@@ -48,7 +48,13 @@ final class Migrator
             }
 
             try {
-                $pdo->exec($sql);
+                if ($driver === 'mysql') {
+                    foreach (self::splitStatements($sql) as $statement) {
+                        $pdo->exec($statement);
+                    }
+                } else {
+                    $pdo->exec($sql);
+                }
                 $stmt = $pdo->prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
                 $stmt->execute([$version, gmdate('Y-m-d H:i:s')]);
                 if ($useTransaction && $pdo->inTransaction()) {
@@ -63,4 +69,14 @@ final class Migrator
             }
         }
     }
+    /**
+     * Migrations intentionally contain only ordinary DDL/DML (no stored routines).
+     * Execute MySQL statements individually so shared hosts do not need multi-statement PDO support.
+     */
+    private static function splitStatements(string $sql): array
+    {
+        $parts = preg_split('/;\s*(?:\r?\n|$)/', trim($sql)) ?: [];
+        return array_values(array_filter(array_map('trim', $parts), static fn(string $statement): bool => $statement !== ''));
+    }
+
 }

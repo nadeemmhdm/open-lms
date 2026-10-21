@@ -16,7 +16,8 @@ final class Installer
             ['PDO MySQL', in_array('mysql', $pdoDrivers, true), in_array('mysql', $pdoDrivers, true) ? 'Available' : 'Not available'],
             ['PDO SQLite', in_array('sqlite', $pdoDrivers, true), in_array('sqlite', $pdoDrivers, true) ? 'Available' : 'Optional / unavailable'],
             ['Sessions', function_exists('session_start'), function_exists('session_start') ? 'Available' : 'Missing'],
-            ['OpenSSL', function_exists('openssl_encrypt'), function_exists('openssl_encrypt') ? 'Available' : 'Missing'],
+            ['OpenSSL', function_exists('openssl_encrypt') && function_exists('openssl_decrypt'), (function_exists('openssl_encrypt') && function_exists('openssl_decrypt')) ? 'Available' : 'Missing (required for MFA secret encryption and backups)'],
+            ['mbstring', function_exists('mb_strlen') && function_exists('mb_substr') && function_exists('mb_strtolower'), function_exists('mb_strlen') ? 'Available' : 'Missing (required)'],
             ['Fileinfo', class_exists('finfo'), class_exists('finfo') ? 'Available' : 'Missing (required for secure uploads)'],
             ['Config directory writable', is_writable($root . '/config'), is_writable($root . '/config') ? 'Writable' : 'Not writable'],
             ['Storage directory writable', is_writable($root . '/storage'), is_writable($root . '/storage') ? 'Writable' : 'Not writable'],
@@ -60,6 +61,12 @@ final class Installer
         }
 
         try {
+            if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt')) {
+                return [false, 'PHP OpenSSL is required for MFA secret encryption and authenticated backups.'];
+            }
+            if (!function_exists('mb_strlen') || !function_exists('mb_substr') || !function_exists('mb_strtolower')) {
+                return [false, 'PHP mbstring is required by Open LMS.'];
+            }
             if (!class_exists('finfo')) {
                 return [false, 'PHP Fileinfo is required for secure learning-material uploads.'];
             }
@@ -76,7 +83,14 @@ final class Installer
 
             $pdo = Database::connection($db);
             self::migrate($pdo, $driver);
-            self::seed($pdo, $driver, $name, $email, $password, $institution);
+            $pdo->beginTransaction();
+            try {
+                self::seed($pdo, $driver, $name, $email, $password, $institution);
+                $pdo->commit();
+            } catch (\Throwable $seedError) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                throw $seedError;
+            }
 
             $appKey = bin2hex(random_bytes(32));
             $config = "<?php\nreturn " . var_export([
@@ -93,7 +107,7 @@ final class Installer
                     'session_name' => 'open_lms_session',
                     'login_max_attempts' => 5,
                     'login_window_minutes' => 15,
-                    'require_mfa_for_super_admin' => false,
+                    'require_mfa_for_super_admin' => true,
                 ],
                 'uploads' => [
                     'max_bytes' => 10 * 1024 * 1024,
@@ -107,16 +121,21 @@ final class Installer
             file_put_contents($root . '/storage/install.lock', gmdate('c') . "\n", LOCK_EX);
             return [true, null];
         } catch (\Throwable $e) {
+            error_log('[OpenLMS installer] ' . $e->getMessage());
             return [false, 'Installation failed: ' . self::safeError($e)];
         }
     }
 
     private static function safeError(\Throwable $e): string
     {
-        $message = $e->getMessage();
-        $message = preg_replace('/password=[^;\s]+/i', 'password=[redacted]', $message);
-        $message = preg_replace('/\/[^\s]+\/storage\/[^\s]+/i', '[private path]', $message);
-        return mb_substr((string) $message, 0, 400);
+        $message = strtolower($e->getMessage());
+        if (str_contains($message, 'sqlstate') || str_contains($message, 'access denied') || str_contains($message, 'database') || str_contains($message, 'connection')) {
+            return 'Database connection or migration failed. Recheck the database host, name, username, password, and PDO driver shown by diagnostics.';
+        }
+        if (str_contains($message, 'permission') || str_contains($message, 'writable') || str_contains($message, 'write')) {
+            return 'A required application directory could not be written. Check config/ and storage/ permissions.';
+        }
+        return 'A server-side setup step failed. Review the private PHP error log and the installer diagnostics, then retry.';
     }
 
     public static function migrate(PDO $pdo, string $driver): void
@@ -181,10 +200,11 @@ final class Installer
         $stmt = $pdo->prepare('INSERT INTO app_settings (setting_key, setting_value, is_public, updated_at) VALUES (?, ?, ?, ?)');
         $stmt->execute(['institution_name', $institution, 1, $now]);
         $stmt->execute(['installed_at', gmdate('c'), 0, $now]);
+        $stmt->execute(['mfa_required_roles', json_encode(['super_admin']), 0, $now]);
 
-        $features = ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','reports','certificates','timetable','parent_portal','live_classes','fee_management'];
+        $features = ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','certificates','timetable','parent_portal','live_classes','fee_management','search','backup_restore'];
         foreach ($features as $feature) {
-            $enabled = in_array($feature, ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','reports'], true) ? 1 : 0;
+            $enabled = in_array($feature, ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','search','backup_restore'], true) ? 1 : 0;
             $pdo->prepare('INSERT INTO feature_settings (feature_key, enabled, updated_at) VALUES (?, ?, ?)')->execute([$feature, $enabled, $now]);
         }
 

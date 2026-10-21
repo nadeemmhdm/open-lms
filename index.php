@@ -2,15 +2,23 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 
+use OpenLMS\Core\Auth;
+use OpenLMS\Core\Config;
 use OpenLMS\Core\Csrf;
 use OpenLMS\Services\Installer;
 use OpenLMS\Services\Migrator;
 use OpenLMS\Controllers\AuthController;
+use OpenLMS\Controllers\MfaController;
 use OpenLMS\Controllers\DashboardController;
 use OpenLMS\Controllers\AdminController;
 use OpenLMS\Controllers\DiagnosticsController;
 use OpenLMS\Controllers\AcademicController;
 use OpenLMS\Controllers\LearningController;
+use OpenLMS\Controllers\AttendanceController;
+use OpenLMS\Controllers\AssessmentController;
+use OpenLMS\Controllers\ExamController;
+use OpenLMS\Controllers\ProjectController;
+use OpenLMS\Controllers\SystemController;
 
 $configFile = __DIR__ . '/config/config.php';
 $lockFile = __DIR__ . '/storage/install.lock';
@@ -45,21 +53,67 @@ if (!$installed) {
     <?php render_page('Install', ob_get_clean(), false); exit;
 }
 
-if ($route === 'install') { http_response_code(404); render_page('Not found','<div class="card"><h2>Installer locked</h2><p>Open LMS is already installed.</p></div>'); exit; }
+if ($route === 'install') {
+    http_response_code(404);
+    render_page('Not found','<div class="card"><h2>Installer locked</h2><p>Open LMS is already installed.</p></div>');
+    exit;
+}
 
 try {
     Migrator::migrateConfigured();
+
+    // Routes which are intentionally available before an authenticated application session.
+    if ($route === 'login') { AuthController::login(); exit; }
+    if ($route === 'logout') { AuthController::logout(); exit; }
+    if ($route === 'mfa-challenge') { MfaController::challenge(); exit; }
+    if ($route === 'reset-password') { AuthController::resetPassword(); exit; }
+    if ($route === 'certificate-verify') { SystemController::certificateVerify(); exit; }
+
+    Auth::requireAuth();
+
+    // Roles selected in the server-side MFA policy must enroll TOTP before using LMS functions.
+    $mustEnrollMfa = current_user_mfa_required() && !Auth::mfaEnabled();
+    if ($mustEnrollMfa && $route !== 'mfa-setup') {
+        flash_set('success', 'Set up authenticator MFA before continuing.');
+        header('Location: ' . app_url('?r=mfa-setup')); exit;
+    }
+
     match ($route) {
-        'login' => AuthController::login(),
-        'logout' => AuthController::logout(),
         'dashboard' => DashboardController::show(),
+        'mfa-setup' => MfaController::setup(),
         'academics' => AcademicController::index(),
         'subjects' => LearningController::subjects(),
         'subject' => LearningController::subject(),
         'course' => LearningController::course(),
         'lesson' => LearningController::lesson(),
         'material-download' => LearningController::download(),
+        'attendance' => AttendanceController::index(),
+        'attendance-export' => AttendanceController::export(),
+        'questions' => AssessmentController::questionBank(),
+        'quizzes' => AssessmentController::quizzes(),
+        'gradebook' => AssessmentController::gradebook(),
+        'exams' => ExamController::manage(),
+        'assessments' => ExamController::assessments(),
+        'assessment-start' => ExamController::start(),
+        'assessment-take' => ExamController::take(),
+        'assessment-save' => ExamController::save(),
+        'assessment-event' => ExamController::event(),
+        'assessment-submit' => ExamController::submit(),
+        'assessment-results' => ExamController::results(),
+        'assessment-review' => ExamController::review(),
+        'projects' => ProjectController::index(),
+        'project' => ProjectController::view(),
+        'project-file' => ProjectController::download(),
+        'notifications' => SystemController::notifications(),
+        'reports' => SystemController::reports(),
+        'certificates' => SystemController::certificates(),
+        'timetable' => SystemController::timetable(),
+        'backup' => SystemController::backup(),
+        'search' => SystemController::search(),
+        'fees' => SystemController::fees(),
+        'parent-portal' => SystemController::parentPortal(),
         'users' => AdminController::users(),
+        'roles' => AdminController::roles(),
         'features' => AdminController::features(),
         'audit' => AdminController::audit(),
         'diagnostics' => DiagnosticsController::show(),
