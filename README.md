@@ -13,6 +13,7 @@ Phases 1–6 are implemented in this repository.
 - Secure sessions, password hashing, CSRF, prepared statements, login throttling and audit logs.
 - Server-side roles/permissions, protected Super Admin elevation/removal rules and account suspension controls.
 - One-time 30-minute password-reset links for trusted manual delivery.
+- Admin-generated self-service onboarding links: seat-limited bulk Student links and one-user role setup links with 6–8 digit public IDs, hashed secrets, automatic expiry/consumption and immediate sign-in after account creation.
 - RFC 6238 TOTP MFA with locally generated QR enrollment, encrypted secrets, replay prevention, one-time hashed recovery codes, challenge throttling, mandatory-role policy, user disable/re-enroll, and Super-Admin-authorized MFA reset.
 - Responsive light/dark UI and safe diagnostics.
 
@@ -57,7 +58,7 @@ Phases 1–6 are implemented in this repository.
 - Optional fee invoice/payment-recording module (not a payment gateway).
 - Authorization-aware search with a server-side module switch.
 - Configurable encrypted application backup/restore including referenced private upload bytes.
-- Versioned migrations through `006_phase6` plus final security/regression tests.
+- Versioned migrations through `008_registration_invites` plus security/regression tests.
 - Server-side module switches for optional announcements, search, backup/restore, certificates, timetable/live classes, parent portal and fee management.
 
 ## Runtime requirements
@@ -71,7 +72,7 @@ Recommended: PHP 8.1+ with PDO, sessions, OpenSSL, mbstring and Fileinfo. For In
 3. Open the website. If `config/config.php` and `storage/install.lock` do not exist, Open LMS displays its first-run installer.
 4. Select **MySQL / MariaDB (InfinityFree)** and enter the exact database host/name/user/password from the hosting panel. Do not assume `localhost`.
 5. Enter the institution name and first Super Admin credentials (minimum 12-character password).
-6. The installer applies all pending migrations `001`–`006`, seeds roles/permissions/features, creates the first Super Admin, generates a random application encryption key, writes `config/config.php`, and creates `storage/install.lock`.
+6. The installer applies all pending migrations `001`–`008`, seeds roles/permissions/features, creates the first Super Admin, generates a random application encryption key, writes `config/config.php`, and creates `storage/install.lock`.
 7. Sign in. The Super Admin is required to enroll authenticator MFA before continuing.
 
 Expected upload layout:
@@ -107,6 +108,7 @@ Do not commit/generated-upload `config/config.php`, database credentials, instal
 - TOTP secrets are AES-256-GCM encrypted using the generated application key; recovery codes are stored only as password hashes.
 - Private LMS files use randomized non-executable storage names and are streamed only after authorization.
 - Public errors do not expose stack traces, credentials or internal database paths.
+- Registration invite secrets are stored only as SHA-256 hashes; active links disappear after their allowed account count is reached, after expiry, or after administrator revocation.
 
 Read `SECURITY.md`, `TESTING.md` and `KNOWN_LIMITATIONS.md` before public deployment.
 
@@ -120,6 +122,8 @@ Both adapters use ordered versioned migrations:
 - `004_phase4_*` — exam attempt/grading/event data
 - `005_phase5_*` — projects/groups/versioning/grading
 - `006_phase6_*` — notifications/certificates/timetable/parent/fees/password-reset/backups/completions
+- `007_installer_seed_repair_*` — safe recovery for interrupted first-run seeds
+- `008_registration_invites_*` — secure self-service account onboarding links and invite history states
 
 `schema_migrations` prevents intentional reapplication. Existing installations run the migration checker at startup and only missing versions are applied. Back up before deploying a new schema version.
 
@@ -133,7 +137,7 @@ Then open `http://127.0.0.1:8080/`. A supported PDO driver is required to comple
 
 ## Verification
 
-Local automated checks include PHP syntax lint, JavaScript syntax, migrations `001`–`006` in a temporary SQLite database, cross-module integrity workflows, RFC 6238 vectors, local QR generation, CSRF/security wiring and first-run installer HTTP rendering. See `TESTING.md` for exact commands and the required InfinityFree/MySQL acceptance checklist.
+Local automated checks include PHP syntax lint, JavaScript syntax, migrations `001`–`008` in a temporary SQLite database, cross-module integrity workflows, RFC 6238 vectors, local QR generation, CSRF/security wiring and first-run installer HTTP rendering. See `TESTING.md` for exact commands and the required InfinityFree/MySQL acceptance checklist.
 
 The current build environment does **not** expose a PHP PDO database driver, so a live PHP/MySQL migration and end-to-end deployment cannot truthfully be marked as tested here. Complete the target-host checklist before treating an installation as production-ready.
 
