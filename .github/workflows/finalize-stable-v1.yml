@@ -49,8 +49,28 @@ jobs:
           echo '36918fcebfa5b649f2ba6ecfcde76698320ed5c0f1a0178a47aa96e32d4e3a78  /tmp/openlms-final8.tar.xz' | sha256sum -c -
           tar -xJf /tmp/openlms-final8.tar.xz -C target
           cd target
+          test "$(git hash-object README.md)" = 'ca047ce63461908f700890042065e13ad75ec7fd'
+          test "$(git hash-object app/Controllers/LessonLearningTrait.php)" = '9ed1d93d4984d93f25c8409fa075d45bc62a859b'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-1.js)" = '54b5c41261566069f0e4d6b819284217bdd5652c'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-2.js)" = '31817bcb95294996d8b0b4a049c46d9fc140a0e7'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-3.js)" = 'e902fe9a08bec130cc77f9ae35d24bda11774f59'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-4.js)" = '1a8fa492024ee34754331a3d5b29ef79ae0c6938'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode.js)" = '6cbf8397c9b1ccf266f0710928069d8280cb1c9e'
+          test "$(git hash-object tests/security_static.py)" = 'cbb21614fc6093146a0fece9e9e2e673c91b0484'
           git add -A
-          test "$(git write-tree)" = 'b0a96ea9b86169943ffd66c86b7f5102cecc1c75'
+          cat > /tmp/expected-paths <<'EOF'
+          README.md
+          app/Controllers/LessonLearningTrait.php
+          assets/js/vendor/openlms-qrcode-modules-1.js
+          assets/js/vendor/openlms-qrcode-modules-2.js
+          assets/js/vendor/openlms-qrcode-modules-3.js
+          assets/js/vendor/openlms-qrcode-modules-4.js
+          assets/js/vendor/openlms-qrcode.js
+          tests/security_static.py
+          EOF
+          git diff --cached --name-only | sort > /tmp/actual-paths
+          diff -u /tmp/expected-paths /tmp/actual-paths
+          echo "Final candidate tree: $(git write-tree)"
 
       - name: Verify stable source
         shell: bash
@@ -125,9 +145,8 @@ jobs:
           cd target
           EXPECTED_MAIN='01e5fd03c7544481057812b201453a74792491cd'
           test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "$EXPECTED_MAIN"
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" -eq 8
           git config user.name 'Nadeem'
           git config user.email '160517299+nadeemmhdm@users.noreply.github.com'
-          git add -A
-          test "$(git write-tree)" = 'b0a96ea9b86169943ffd66c86b7f5102cecc1c75'
           git commit -m 'release: finalize Open LMS v1.0.0 stable'
           git push origin HEAD:main
