@@ -16,7 +16,7 @@ node tests/qrcode_smoke.js
 python3 tests/security_static.py
 ```
 
-`tests/full_schema_smoke.py` applies all SQLite migrations and exercises representative integrity relationships across academics, attendance, quizzes/exams, projects, grades, notifications, certificates, timetable, parent links, fees, reset tokens and backup history. It also runs a foreign-key integrity check.
+`tests/full_schema_smoke.py` applies all SQLite migrations and exercises representative integrity relationships across academics, attendance, quizzes/exams, projects, grades, notifications, certificates, timetable, parent links, fees, reset tokens and backup history, registration invites and invite history. It also runs a foreign-key integrity check.
 
 `tests/totp_rfc_test.php` verifies the underlying TOTP/HOTP calculation against RFC 6238 SHA-1 vectors.
 
@@ -29,7 +29,7 @@ python3 tests/security_static.py
 Before public use on InfinityFree/MySQL:
 
 1. Installer diagnostics all required capabilities.
-2. Fresh MySQL database applies migrations `001`–`006` without SQL errors.
+2. Fresh MySQL database applies migrations `001`–`008` without SQL errors.
 3. First Super Admin can sign in, is forced to MFA setup, can sign out/in with TOTP and can use a recovery code exactly once.
 4. Invalid credentials hit login rate limits without revealing whether an account exists.
 5. Administrator cannot suspend or elevate itself to Super Admin.
@@ -51,6 +51,8 @@ Before public use on InfinityFree/MySQL:
 21. Teacher announcements cannot target all users/batches, teacher reports do not expose institution-wide totals, and a student cannot see a timetable row for another batch.
 22. Super Admin MFA reset requires another Super Admin and current-password reauthentication.
 23. Optional fee/live-class actions generate in-app notifications when the notifications module is enabled.
+24. A bulk Student registration link creates exactly the configured number of Student accounts, does not consume a seat on validation failure, then becomes unavailable with the custom completed-link page.
+25. A single-role setup link creates exactly one account with the selected non-Super-Admin role, signs the user in, and cannot be reused. Expired and revoked links show the custom unavailable page.
 
 ## Current build-environment limitation
 
