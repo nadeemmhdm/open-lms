@@ -154,9 +154,6 @@ assert 'random_int(100000,99999999)' in support_controller, 'support ticket publ
 assert "status']==='resolved'" in support_controller and 'Replies are now locked' in support_controller, 'resolved support tickets must reject further replies'
 assert "'support'" in installer, 'fresh installer must seed support module state'
 
-print(f"PASS: {len(php_files)} PHP files scanned; CSRF, RBAC/MFA, session lifetimes, timezone/maintenance, SMTP, payment verification, support, password recovery, backup V3, invite/Q&A, sidebar and scope regressions verified.")
-
-
 # Stable v1.0 password recovery, branding, chapter management, backup V3 and active-nav checks.
 backup_service = (ROOT / 'app/Services/BackupService.php').read_text()
 course_learning = (ROOT / 'app/Controllers/CourseLearningTrait.php').read_text()
@@ -177,3 +174,13 @@ assert "'schema_migrations'" not in backup_service.split('private const TABLES =
 assert "'auth_sessions'" not in backup_service.split('private const TABLES = [',1)[1].split('];',1)[0], 'active auth sessions must not be backed up'
 assert 'gzencode' in backup_service and "aes-256-gcm" in backup_service and 'pathForDownload' in backup_service, 'compressed encrypted backup/download wiring missing'
 assert "'backup-download' => SystemController::backupDownload()" in index_php, 'secure backup download route missing'
+
+lesson_learning = (ROOT / 'app/Controllers/LessonLearningTrait.php').read_text()
+release_doc = (ROOT / 'RELEASE.md').read_text()
+assert 'delete_lesson' in lesson_learning and 'Delete empty lesson' in lesson_learning, 'safe lesson delete control missing'
+assert 'lesson_progress' in lesson_learning and 'lesson_prerequisites' in lesson_learning, 'lesson deletion must guard dependent learning history'
+assert '# Open LMS Stable' in release_doc and '**Version:** v1.0.0' in release_doc and '**Description:**' in release_doc, 'minimal stable release metadata missing'
+assert not (ROOT / 'CODE_OF_CONDUCT.md').exists() and not (ROOT / 'CONTRIBUTING.md').exists() and not (ROOT / 'TESTING.md').exists(), 'redundant markdown files should stay consolidated into README/SECURITY'
+assert not (ROOT / 'app/Helpers').exists() and not (ROOT / 'app/Models').exists(), 'empty source folders should not remain in stable package'
+
+print(f"PASS: {len(php_files)} PHP files scanned; stable v1.0 security, recovery, backup V3, branding, sidebar, content-management and scope regressions verified.")

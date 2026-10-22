@@ -2,7 +2,7 @@
 
 Open LMS is a self-hosted, open-source learning management system for PHP shared hosting, including InfinityFree-style MySQL hosting. It provides academic setup, course delivery, assessments, projects, attendance, onboarding, payments, support, security controls, and administration without requiring a worker process or shell access on the server.
 
-**Stable release:** `v1.0.0`  
+**Stable release:** `v1.0.0`
 **License:** MIT
 
 ## Highlights
@@ -61,7 +61,7 @@ Administrators can create and manage subjects and courses. Teachers can manage o
 
 `Subject → Course → Chapter → Lesson`
 
-Chapters can be added, renamed, or deleted when empty. Lessons can be created inside chapters and edited with content, release controls, prerequisites, links, and private learning materials. Empty subjects and courses can be deleted; records with learning or student history are protected from destructive deletion.
+Chapters can be added, renamed, or deleted when empty. Lessons can be created inside chapters, edited with content, release controls, prerequisites, links, and private learning materials, and safely deleted only while they have no dependent learning history. Empty subjects and courses can be deleted; records with learning or student history are protected from destructive deletion.
 
 ## Backups
 

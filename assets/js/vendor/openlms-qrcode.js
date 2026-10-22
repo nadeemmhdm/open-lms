@@ -1,4 +1,4 @@
-/* Open LMS bundled QR modules. Third-party notices: THIRD_PARTY_NOTICES.md */
+/* Open LMS bundled QR modules. Third-party license: licenses/qrcode-terminal-Apache-2.0.txt */
 (function(S,global){'use strict';var __modules=S.modules,__cache=S.cache;
 function __require(id){ if(__cache[id]) return __cache[id].exports; if(!__modules[id]) throw new Error('QR module not found: '+id); var m={exports:{}}; __cache[id]=m; __modules[id](m,m.exports,__require); return m.exports; }
 var QRCode=__require('QRCode'); var Levels=__require('QRErrorCorrectLevel');
