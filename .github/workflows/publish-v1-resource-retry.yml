@@ -1,0 +1,66 @@
+name: Publish v1 resource refinement retry
+
+on:
+  push:
+    branches:
+      - v1-resource-publish
+    paths:
+      - '.github/workflows/publish-v1-resource-retry.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: publisher
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: target
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, mbstring, fileinfo, openssl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply and verify exact update
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED='74e44124ddf750130d93466ccd7e14c25da2fdf5'
+          test "$(git -C target rev-parse HEAD)" = "$EXPECTED"
+          cat publisher/.publish-resource/part.00 publisher/.publish-resource/part.01 | base64 -d > /tmp/update.patch.gz
+          echo '90e16c1c6eeae9aabc60f7b3c2737f55c4dc58288c29106fca1825ad3a500bd0  /tmp/update.patch.gz' | sha256sum -c -
+          gzip -dc /tmp/update.patch.gz > /tmp/update.patch
+          cd target
+          patch --batch --forward -p2 < /tmp/update.patch
+          count=0
+          while IFS= read -r -d '' f; do php -l "$f" >/dev/null; count=$((count+1)); done < <(find . -type f -name '*.php' -print0)
+          test "$count" -eq 67
+          node --check assets/js/app.js
+          python3 tests/full_schema_smoke.py
+          php tests/totp_rfc_test.php
+          node tests/qrcode_smoke.js
+          python3 tests/security_static.py
+      - name: Publish clean main commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          EXPECTED='74e44124ddf750130d93466ccd7e14c25da2fdf5'
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          ACTUAL="$(git ls-remote "$REMOTE" refs/heads/main | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED"
+          cd target
+          git config user.name 'Nadeem'
+          git config user.email '160517299+nadeemmhdm@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: expand lesson resource links'
+          git push "$REMOTE" HEAD:main
