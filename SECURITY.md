@@ -23,6 +23,7 @@ Do not publish working exploit details, credentials, MFA secrets, private files 
 - Mandatory Super Admin TOTP and configurable mandatory-MFA role policy.
 - AES-256-GCM encrypted TOTP secrets; hashed single-use recovery codes; replay-step tracking.
 - Password reset tokens are random, stored only as SHA-256 hashes, expire and are one-use.
+- Account-setup invite URLs use a 6–8 digit public ID plus a separate 192-bit random secret. Only the secret hash is stored. Single-user links are consumed after one registration; bulk Student links are consumed at their configured seat limit; expired/revoked links are removed from the active table and retained only as non-secret hash history for status/audit.
 - Upload allowlist with extension, Fileinfo MIME, size and binary signature validation.
 - Random `.dat` private filenames; direct `storage/` web requests denied; downloads require authorization.
 - Server-enforced lesson release/prerequisite, exam deadline and project deadline rules.
