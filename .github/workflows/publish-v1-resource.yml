@@ -68,14 +68,17 @@ jobs:
 
       - name: Publish clean commit
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           EXPECTED='74e44124ddf750130d93466ccd7e14c25da2fdf5'
-          ACTUAL="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          ACTUAL="$(git ls-remote "$REMOTE" refs/heads/main | awk '{print $1}')"
           test "$ACTUAL" = "$EXPECTED"
           cd target
           git config user.name 'Nadeem'
           git config user.email '160517299+nadeemmhdm@users.noreply.github.com'
           git add -A
           git commit -m 'fix: expand lesson resource links'
-          git push origin HEAD:main
+          git push "$REMOTE" HEAD:main
