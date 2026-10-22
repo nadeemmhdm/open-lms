@@ -69,7 +69,7 @@ final class RegistrationInviteController
         ob_start(); ?>
         <div class="public-auth-wrap invite-setup-wrap">
           <section class="public-auth-card card">
-            <div class="public-brand"><span class="brand-mark">OL</span><div><strong>Open LMS</strong><span>Account setup</span></div></div>
+            <div class="public-brand"><span class="brand-mark"><?=e(app_brand_initials())?></span><div><strong><?=e(app_name())?></strong><span>Account setup</span></div></div>
             <div class="invite-head"><span class="eyebrow"><?= $isBulk ? 'Student registration' : 'Private account invitation' ?></span><h1>Create your account</h1><p class="muted">This link creates a <?= e((string)$invite['role_label']) ?> account. Your email address is also your sign-in username.</p></div>
             <?php if($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
             <div class="invite-meta"><div><span>Role</span><strong><?= e((string)$invite['role_label']) ?></strong></div><?php if($isBulk): ?><div><span>Seats remaining</span><strong><?= $remaining ?></strong></div><?php endif; ?><div><span>Link ID</span><strong><?= e((string)$publicId) ?></strong></div><div><span>Expires</span><strong><?= e(format_app_datetime((string)$invite['expires_at'])) ?> <?= e(app_timezone()) ?></strong></div></div>

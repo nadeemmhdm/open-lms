@@ -44,6 +44,14 @@ trait SubjectLearningTrait
                         $pdo->prepare("UPDATE subjects SET status='archived',updated_at=? WHERE id=?")->execute([gmdate('Y-m-d H:i:s'),$id]);
                         Auth::audit('subjects.archive', 'Archived subject', null, 'subject', $id);
                         $message = 'Subject archived.';
+                    } elseif ($action === 'delete_subject') {
+                        $id = (int)($_POST['subject_id'] ?? 0);
+                        $st = $pdo->prepare('SELECT COUNT(*) FROM courses WHERE subject_id=?');
+                        $st->execute([$id]);
+                        if ((int)$st->fetchColumn() > 0) throw new \RuntimeException('Delete or move the courses in this subject first. Subjects with course history cannot be deleted.');
+                        $pdo->prepare('DELETE FROM subjects WHERE id=?')->execute([$id]);
+                        Auth::audit('subjects.delete', 'Deleted empty subject', null, 'subject', $id);
+                        $message = 'Subject deleted.';
                     }
                 } catch (\Throwable $e) {
                     $error = self::friendlyDbError($e, 'Unable to save subject.');
@@ -101,6 +109,13 @@ trait SubjectLearningTrait
                         $code=strtoupper(trim((string)($_POST['code']??'')))?:null; $desc=trim((string)($_POST['description']??''))?:null; $thumb=safe_external_url((string)($_POST['thumbnail']??''));
                         $pdo->prepare('UPDATE subjects SET name=?,code=?,description=?,thumbnail=?,updated_at=? WHERE id=?')->execute([$name,$code,$desc,$thumb,gmdate('Y-m-d H:i:s'),$id]);
                         $subject=array_merge($subject,['name'=>$name,'code'=>$code,'description'=>$desc,'thumbnail'=>$thumb]); Auth::audit('subjects.update','Updated subject '.$name,null,'subject',$id); $message='Subject updated.';
+                    } elseif ($action==='delete_subject' && $canManageSubjects) {
+                        $st=$pdo->prepare('SELECT COUNT(*) FROM courses WHERE subject_id=?');$st->execute([$id]);
+                        if((int)$st->fetchColumn()>0) throw new \RuntimeException('Delete or move the courses in this subject first. Subjects with course history cannot be deleted.');
+                        $pdo->prepare('DELETE FROM subjects WHERE id=?')->execute([$id]);
+                        Auth::audit('subjects.delete','Deleted empty subject',null,'subject',$id);
+                        flash_set('success','Subject deleted.');
+                        header('Location: '.app_url('?r=subjects'));exit;
                     } elseif ($action==='create_course' && $canCreateCourse) {
                         $title=trim((string)($_POST['title']??'')); if($title==='') throw new \RuntimeException('Course title is required.');
                         $teacherId = in_array('teacher',$user['roles'],true) && !$canManageSubjects ? (int)$user['id'] : self::idOrNull($_POST['teacher_id']??null);
@@ -143,7 +158,7 @@ trait SubjectLearningTrait
 
         <?php if($canCreateCourse): ?><section class="card form-card" id="new-course"><h2>Create course</h2><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="create_course"><label>Course title<input name="title" required maxlength="180"></label><label>Description<textarea name="description" rows="4" maxlength="5000"></textarea></label><?php if($canManageSubjects): ?><label>Teacher<select name="teacher_id"><option value="">Unassigned</option><?php foreach($teachers as $t): ?><option value="<?= (int)$t['id'] ?>"><?= e($t['name'].' · '.$t['email']) ?></option><?php endforeach; ?></select></label><?php endif; ?><label>Status<select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></label><button class="btn btn-primary">Create course</button></form></section><?php endif; ?>
 
-        <?php if($canManageSubjects): ?><details class="card settings-panel"><summary>Edit subject</summary><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="update_subject"><div class="form-row"><label>Name<input name="name" value="<?= e($subject['name']) ?>" required></label><label>Code<input name="code" value="<?= e($subject['code']) ?>"></label></div><label>Description<textarea name="description" rows="3"><?= e($subject['description']) ?></textarea></label><label>Thumbnail URL<input type="url" name="thumbnail" value="<?= e($subject['thumbnail']) ?>"></label><button class="btn">Save subject</button></form></details><?php endif; ?>
+        <?php if($canManageSubjects): ?><details class="card settings-panel"><summary>Edit subject</summary><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="update_subject"><div class="form-row"><label>Name<input name="name" value="<?= e($subject['name']) ?>" required></label><label>Code<input name="code" value="<?= e($subject['code']) ?>"></label></div><label>Description<textarea name="description" rows="3"><?= e($subject['description']) ?></textarea></label><label>Thumbnail URL<input type="url" name="thumbnail" value="<?= e($subject['thumbnail']) ?>"></label><button class="btn">Save subject</button></form><hr><form method="post" onsubmit="return confirm('Delete this subject? Only a subject with no courses can be deleted.')"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="delete_subject"><button class="btn btn-danger" type="submit">Delete empty subject</button></form></details><?php endif; ?>
         <?php render_page($subject['name'], ob_get_clean());
     }
 

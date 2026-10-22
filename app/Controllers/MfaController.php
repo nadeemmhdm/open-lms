@@ -52,7 +52,7 @@ final class MfaController
         }
 
         $secret = (string)($_SESSION['_mfa_setup_secret'] ?? '');
-        $issuer = (string)(\OpenLMS\Core\Config::get('app.name', 'Open LMS'));
+        $issuer = app_name();
         $uri = $secret !== '' ? TotpService::provisioningUri($secret, (string)$user['email'], $issuer) : '';
         $flash = flash_pull();
         ob_start(); ?>

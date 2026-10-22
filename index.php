@@ -72,6 +72,7 @@ try {
     if ($route === 'login') { AuthController::login(); exit; }
     if ($route === 'logout') { AuthController::logout(); exit; }
     if ($route === 'mfa-challenge') { MfaController::challenge(); exit; }
+    if ($route === 'forgot-password') { AuthController::forgotPassword(); exit; }
     if ($route === 'reset-password') { AuthController::resetPassword(); exit; }
     if ($route === 'certificate-verify') { SystemController::certificateVerify(); exit; }
     if ($route === 'payment-webhook') { FeeController::webhook(); exit; }
@@ -130,6 +131,7 @@ try {
         'certificates' => SystemController::certificates(),
         'timetable' => SystemController::timetable(),
         'backup' => SystemController::backup(),
+        'backup-download' => SystemController::backupDownload(),
         'search' => SystemController::search(),
         'fees' => FeeController::index(),
         'payment-start' => FeeController::start(),

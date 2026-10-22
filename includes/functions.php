@@ -43,15 +43,39 @@ function client_ip(): string
     return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '0.0.0.0';
 }
 
+function app_name(): string
+{
+    $fallback = class_exists('OpenLMS\Core\Config') ? (string) \OpenLMS\Core\Config::get('app.name', 'Open LMS') : 'Open LMS';
+    try {
+        if (class_exists('OpenLMS\Services\SettingsService')) {
+            $configured = trim((string) \OpenLMS\Services\SettingsService::get('institution_name', $fallback));
+            if ($configured !== '') return $configured;
+        }
+    } catch (\Throwable) {}
+    return $fallback !== '' ? $fallback : 'Open LMS';
+}
+
+function app_brand_initials(): string
+{
+    $name = preg_replace('/\s+/', ' ', trim(app_name())) ?? 'Open LMS';
+    $parts = array_values(array_filter(explode(' ', $name)));
+    if (!$parts) return 'OL';
+    $letters = mb_substr($parts[0], 0, 1);
+    if (count($parts) > 1) $letters .= mb_substr($parts[count($parts) - 1], 0, 1);
+    return mb_strtoupper($letters ?: 'OL');
+}
+
 function nav_link(string $route, string $label): string
 {
-    $active = ($_GET['r'] ?? 'dashboard') === $route ? ' active' : '';
-    return '<a class="nav-link' . $active . '" href="' . e(app_url('?r=' . $route)) . '">' . e($label) . '</a>';
+    $isActive = ($_GET['r'] ?? 'dashboard') === $route;
+    $active = $isActive ? ' active' : '';
+    $current = $isActive ? ' aria-current="page" data-nav-active="1"' : '';
+    return '<a class="nav-link' . $active . '" data-nav-route="' . e($route) . '"' . $current . ' href="' . e(app_url('?r=' . $route)) . '">' . e($label) . '</a>';
 }
 
 function render_page(string $title, string $content, bool $withShell = true): void
 {
-    $appName = class_exists('OpenLMS\\Core\\Config') ? (string) \OpenLMS\Core\Config::get('app.name', 'Open LMS') : 'Open LMS';
+    $appName = app_name();
     $user = is_file(app_root() . '/config/config.php') && class_exists('OpenLMS\\Core\\Auth') ? \OpenLMS\Core\Auth::user() : null;
     $roles = (array)($user['roles'] ?? []);
     $isPrivileged = $user && \OpenLMS\Core\Auth::isPrivileged();
@@ -62,7 +86,7 @@ function render_page(string $title, string $content, bool $withShell = true): vo
     ?><!doctype html><html lang="en" data-theme="auto"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title><?= e($title) ?> · <?= e($appName) ?></title><link rel="stylesheet" href="<?= e(asset_url('assets/css/app.css')) ?>"><link rel="stylesheet" href="<?= e(asset_url('assets/css/modules.css')) ?>"></head><body>
     <?php if ($withShell && $user): ?>
     <div class="app-shell"><aside class="sidebar">
-      <a class="brand" href="<?= e(app_url('?r=dashboard')) ?>"><span class="brand-mark">OL</span><strong><?= e($appName) ?></strong></a>
+      <a class="brand" href="<?= e(app_url('?r=dashboard')) ?>"><span class="brand-mark"><?= e(app_brand_initials()) ?></span><strong><?= e($appName) ?></strong></a>
       <nav>
         <?= nav_link('dashboard','Dashboard') ?>
         <?php if(!$isParentOnly): ?><?= nav_link('subjects','Courses') ?><?php endif; ?>
@@ -209,9 +233,10 @@ function maintenance_mode_enabled(): bool
 function maintenance_message(): string
 {
     try {
-        $message = class_exists('OpenLMS\\Services\\SettingsService') ? trim((string)\OpenLMS\Services\SettingsService::get('maintenance_message', 'Open LMS is temporarily unavailable for maintenance.')) : '';
-        return $message !== '' ? $message : 'Open LMS is temporarily unavailable for maintenance.';
-    } catch (\Throwable) { return 'Open LMS is temporarily unavailable for maintenance.'; }
+        $fallback = app_name() . ' is temporarily unavailable for maintenance.';
+        $message = class_exists('OpenLMS\\Services\\SettingsService') ? trim((string)\OpenLMS\Services\SettingsService::get('maintenance_message', $fallback)) : '';
+        return $message !== '' ? $message : $fallback;
+    } catch (\Throwable) { return 'The LMS is temporarily unavailable for maintenance.'; }
 }
 
 function feature_enabled(string $key): bool

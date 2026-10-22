@@ -35,3 +35,10 @@
 .btn-danger{border-color:color-mix(in srgb,var(--danger) 35%,var(--border));color:var(--danger);background:color-mix(in srgb,var(--danger) 7%,var(--surface))}
 .action-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 @media(max-width:720px){.sidebar{height:100dvh}.sidebar>nav{padding-bottom:18px}.mini-manage form,.table-manage form,.course-manage form{min-width:0;width:100%}}
+
+/* Active navigation stays visually obvious and is auto-revealed by app.js. */
+.sidebar>nav>.nav-link{position:relative}
+.sidebar>nav>.nav-link.active,.sidebar>nav>.nav-link[aria-current="page"]{background:var(--surface-2);color:var(--text);font-weight:800}
+.sidebar>nav>.nav-link.active::before,.sidebar>nav>.nav-link[aria-current="page"]::before{content:"";position:absolute;left:-4px;top:9px;bottom:9px;width:3px;border-radius:999px;background:var(--primary)}
+
+.auth-brand-name{margin:10px 0 4px;font-weight:800;letter-spacing:-.01em}.auth-links{text-align:center;margin:16px 0 0}.auth-links a{color:var(--primary);font-weight:750}.auth-links a:hover{text-decoration:underline}

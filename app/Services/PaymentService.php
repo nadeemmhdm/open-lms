@@ -72,7 +72,7 @@ final class PaymentService
                 'line_items[0][quantity]'=>'1',
                 'line_items[0][price_data][currency]'=>strtolower((string)$invoice['currency']),
                 'line_items[0][price_data][unit_amount]'=>(string)$amountMinor,
-                'line_items[0][price_data][product_data][name]'=>'Open LMS fee: ' . (string)$invoice['title'],
+                'line_items[0][price_data][product_data][name]'=>app_name() . ' fee: ' . (string)$invoice['title'],
                 'metadata[transaction_id]'=>(string)$tx['id'],
                 'metadata[invoice_id]'=>(string)$invoiceId,
                 'metadata[user_id]'=>(string)$userId,

@@ -44,8 +44,17 @@
   document.querySelectorAll('.sidebar .nav-link').forEach((link) => link.addEventListener('click', () => { if (!desktopSidebar.matches) closeMobileMenu(); }));
   syncMenuA11y();
 
-  // Universal profile entry without duplicating server-side role navigation logic.
   const sidebarNav = document.querySelector('.sidebar nav');
+  const activeNavLink = sidebarNav?.querySelector('.nav-link[aria-current="page"], .nav-link.active');
+  const revealActiveNavLink = () => {
+    if (!activeNavLink || !sidebarNav) return;
+    activeNavLink.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  };
+  requestAnimationFrame(() => requestAnimationFrame(revealActiveNavLink));
+  menuButton?.addEventListener('click', () => setTimeout(revealActiveNavLink, 220));
+  window.addEventListener('pageshow', revealActiveNavLink);
+
+  // Universal profile entry without duplicating server-side role navigation logic.
   if (sidebarNav && !sidebarNav.querySelector('[href*="r=profile"]')) {
     const profile = document.createElement('a');
     profile.className = 'nav-link' + (new URLSearchParams(location.search).get('r') === 'profile' ? ' active' : '');

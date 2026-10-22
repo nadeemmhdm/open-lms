@@ -154,4 +154,26 @@ assert 'random_int(100000,99999999)' in support_controller, 'support ticket publ
 assert "status']==='resolved'" in support_controller and 'Replies are now locked' in support_controller, 'resolved support tickets must reject further replies'
 assert "'support'" in installer, 'fresh installer must seed support module state'
 
-print(f"PASS: {len(php_files)} PHP files scanned; CSRF, RBAC/MFA, session lifetimes, timezone/maintenance, SMTP, payment verification, support, invite/Q&A, sidebar and scope regressions verified.")
+print(f"PASS: {len(php_files)} PHP files scanned; CSRF, RBAC/MFA, session lifetimes, timezone/maintenance, SMTP, payment verification, support, password recovery, backup V3, invite/Q&A, sidebar and scope regressions verified.")
+
+
+# Stable v1.0 password recovery, branding, chapter management, backup V3 and active-nav checks.
+backup_service = (ROOT / 'app/Services/BackupService.php').read_text()
+course_learning = (ROOT / 'app/Controllers/CourseLearningTrait.php').read_text()
+assert "if ($route === 'forgot-password')" in index_php and 'forgotPassword' in authc, 'public forgot-password route missing'
+assert 'password_reset_requests' in authc and "time() + 1800" in authc, '30-minute reset request lifecycle missing'
+assert 'SELECT COUNT(*) FROM password_reset_requests WHERE ip_address=?' in authc and 'MailService::sendPasswordReset' in authc, 'password reset throttling/mail wiring missing'
+assert 'sendPasswordReset' in mail_service and 'expires in 30 minutes' in mail_service, 'password reset email missing'
+assert 'Auth::revokeAllSessions' in authc, 'password reset must revoke existing sessions'
+assert 'function app_name' in helpers and "SettingsService::get('institution_name'" in helpers, 'database-backed LMS branding helper missing'
+assert 'name="lms_name"' in settings_controller and "'institution_name'=>$lmsName" in settings_controller, 'admin LMS-name control missing'
+assert 'aria-current="page"' in helpers and 'scrollIntoView' in app_js and 'data-nav-active' in helpers, 'active sidebar link indicator/reveal missing'
+assert 'update_section' in course_learning and 'delete_section' in course_learning and 'Chapter title' in course_learning, 'chapter manage/delete controls missing'
+assert 'delete_subject' in subject_learning and 'Delete empty subject' in subject_learning, 'subject delete control missing'
+assert "FORMAT = 'open-lms-backup-v3'" in backup_service and 'OPENLMS-BACKUP-V3' in backup_service, 'backup V3 authenticated format missing'
+for table in ['registration_invites','registration_invite_contexts','registration_invite_courses','registration_invite_history','doubts','doubt_replies']:
+    assert f"'{table}'" in backup_service, f'backup missing {table}'
+assert "'schema_migrations'" not in backup_service.split('private const TABLES = [',1)[1].split('];',1)[0], 'schema_migrations must not be restored from backups'
+assert "'auth_sessions'" not in backup_service.split('private const TABLES = [',1)[1].split('];',1)[0], 'active auth sessions must not be backed up'
+assert 'gzencode' in backup_service and "aes-256-gcm" in backup_service and 'pathForDownload' in backup_service, 'compressed encrypted backup/download wiring missing'
+assert "'backup-download' => SystemController::backupDownload()" in index_php, 'secure backup download route missing'

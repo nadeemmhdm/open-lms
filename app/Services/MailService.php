@@ -25,7 +25,7 @@ final class MailService
     public static function test(string $recipient): void
     {
         if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) throw new \RuntimeException('Enter a valid test recipient email.');
-        self::send($recipient, 'Open LMS SMTP test', "SMTP is connected successfully.\n\nThis message was sent from the Open LMS mail settings page.");
+        self::send($recipient, app_name() . ' SMTP test', "SMTP is connected successfully.\n\nThis message was sent from the " . app_name() . " mail settings page.");
     }
 
     public static function sendLoginAlert(array $user, array $login): void
@@ -34,14 +34,29 @@ final class MailService
         $email = (string)($user['email'] ?? '');
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return;
         $name = (string)($user['name'] ?? 'User');
+        $appName = function_exists('app_name') ? app_name() : 'Open LMS';
         $time = function_exists('format_app_datetime') ? format_app_datetime((string)($login['login_at'] ?? gmdate('Y-m-d H:i:s')), 'Y-m-d H:i:s T') : (string)($login['login_at'] ?? '');
-        $body = "Hello {$name},\n\nA sign-in to your Open LMS account was recorded.\n\n"
+        $body = "Hello {$name},\n\nA sign-in to your {$appName} account was recorded.\n\n"
             . 'Time: ' . $time . "\n"
             . 'IP address: ' . (string)($login['ip_address'] ?? 'Unknown') . "\n"
             . 'Device: ' . (string)($login['device_label'] ?? 'Unknown device') . "\n\n"
             . "If this was not you, contact your LMS administrator and change your password.\n";
-        try { self::send($email, 'New sign-in to Open LMS', $body); }
+        try { self::send($email, 'New sign-in to ' . $appName, $body); }
         catch (\Throwable $e) { error_log('[OpenLMS mail login alert] ' . $e->getMessage()); }
+    }
+
+
+    public static function sendPasswordReset(array $user, string $link): void
+    {
+        $email = trim((string)($user['email'] ?? ''));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new \RuntimeException('Account email is invalid.');
+        if (!self::enabled()) throw new \RuntimeException('SMTP is not enabled or configured.');
+        $name = trim((string)($user['name'] ?? 'User')) ?: 'User';
+        $appName = function_exists('app_name') ? app_name() : 'Open LMS';
+        $body = "Hello {$name},\n\nA password reset was requested for your {$appName} account.\n\n"
+            . "Reset password: {$link}\n\n"
+            . "This secure link expires in 30 minutes and can be used only once. If you did not request this, ignore this message.\n";
+        self::send($email, 'Reset your ' . $appName . ' password', $body);
     }
 
     /** @return array{sent:int,failed:int} */
@@ -120,7 +135,7 @@ final class MailService
     private static function sendOnConnection($socket, string $to, string $subject, string $body): void
     {
         $fromEmail = trim((string)SettingsService::get('smtp_from_email', ''));
-        $fromName = trim((string)SettingsService::get('smtp_from_name', Config::get('app.name', 'Open LMS')));
+        $fromName = trim((string)SettingsService::get('smtp_from_name', function_exists('app_name') ? app_name() : Config::get('app.name', 'Open LMS')));
         if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) throw new \RuntimeException('SMTP From email is invalid.');
         $subject = preg_replace('/[\r\n]+/', ' ', trim($subject)) ?? 'Open LMS';
         $fromName = preg_replace('/[\r\n]+/', ' ', $fromName) ?? 'Open LMS';

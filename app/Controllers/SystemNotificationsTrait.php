@@ -61,7 +61,7 @@ trait SystemNotificationsTrait
                         $message = 'Announcement published.';
                         if (isset($_POST['send_email']) && MailService::announcementMailEnabled()) {
                             $recipients = self::announcementRecipients($pdo, $audience, $courseId, $batchId);
-                            $mail = MailService::sendMany($recipients, '[Open LMS] ' . $title, $body . "\n\nPublished: " . format_app_datetime($now, 'Y-m-d H:i T'));
+                            $mail = MailService::sendMany($recipients, '[' . app_name() . '] ' . $title, $body . "\n\nPublished: " . format_app_datetime($now, 'Y-m-d H:i T'));
                             $message .= ' Email sent to ' . $mail['sent'] . ' recipient(s)' . ($mail['failed'] ? '; ' . $mail['failed'] . ' failed.' : '.');
                         }
                     }

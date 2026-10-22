@@ -4,6 +4,7 @@ namespace OpenLMS\Controllers;
 use OpenLMS\Core\Auth;
 use OpenLMS\Core\Csrf;
 use OpenLMS\Core\Database;
+use OpenLMS\Services\MailService;
 
 final class AuthController
 {
@@ -27,7 +28,8 @@ final class AuthController
         ob_start(); ?>
         <div class="auth-wrap">
             <section class="auth-card card">
-                <div class="brand-mark">OL</div>
+                <div class="brand-mark"><?= e(app_brand_initials()) ?></div>
+                <p class="auth-brand-name"><?= e(app_name()) ?></p>
                 <h1>Welcome back</h1>
                 <p class="muted">Sign in to your learning workspace.</p>
                 <?php if ($flash): ?><div class="alert <?= ($flash['type'] ?? '') === 'success' ? 'alert-success' : 'alert-danger' ?>"><?= e((string)($flash['message'] ?? '')) ?></div><?php endif; ?>
@@ -39,6 +41,7 @@ final class AuthController
                     <label class="check-inline"><input type="checkbox" name="remember_me" value="1"> Remember me for 1 day</label><p class="hint">Without this option, the sign-in session expires after 12 hours.</p>
                     <button class="btn btn-primary btn-block" type="submit">Sign in</button>
                 </form>
+                <p class="auth-links"><a href="<?= e(app_url('?r=forgot-password')) ?>">Forgot password?</a></p>
             </section>
         </div>
         <?php render_page('Sign in', ob_get_clean(), false);
@@ -53,6 +56,87 @@ final class AuthController
         }
         Auth::logout();
         header('Location: ' . app_url('?r=login')); exit;
+    }
+
+
+    public static function forgotPassword(): void
+    {
+        if (Auth::user()) {
+            header('Location: ' . app_url('?r=dashboard')); exit;
+        }
+
+        $sent = false;
+        $error = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!Csrf::validate($_POST['_csrf'] ?? null)) {
+                $error = 'Your session token expired. Refresh and try again.';
+            } else {
+                $email = strtolower(trim((string)($_POST['email'] ?? '')));
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    // Keep the response generic so account existence is not exposed.
+                    $sent = true;
+                } else {
+                    $pdo = Database::connection();
+                    $ip = client_ip();
+                    $now = gmdate('Y-m-d H:i:s');
+                    $emailHash = hash('sha256', $email);
+                    try {
+                        $pdo->prepare('DELETE FROM password_reset_requests WHERE requested_at<?')->execute([gmdate('Y-m-d H:i:s', time() - 172800)]);
+                        $ipStmt = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE ip_address=? AND requested_at>=?');
+                        $ipStmt->execute([$ip, gmdate('Y-m-d H:i:s', time() - 900)]);
+                        $emailStmt = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE email_hash=? AND requested_at>=?');
+                        $emailStmt->execute([$emailHash, gmdate('Y-m-d H:i:s', time() - 3600)]);
+                        $allowed = (int)$ipStmt->fetchColumn() < 5 && (int)$emailStmt->fetchColumn() < 3;
+                        $pdo->prepare('INSERT INTO password_reset_requests (email_hash,ip_address,mail_sent,requested_at) VALUES (?,?,0,?)')
+                            ->execute([$emailHash,$ip,$now]);
+                        $requestId = (int)$pdo->lastInsertId();
+
+                        if ($allowed) {
+                            $userStmt = $pdo->prepare("SELECT id,name,email,status FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1");
+                            $userStmt->execute([$email]);
+                            $user = $userStmt->fetch();
+                            if ($user && (string)$user['status'] === 'active' && MailService::enabled()) {
+                                $token = bin2hex(random_bytes(32));
+                                $pdo->prepare('DELETE FROM password_reset_tokens WHERE user_id=? AND used_at IS NULL')->execute([(int)$user['id']]);
+                                $pdo->prepare('INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)')
+                                    ->execute([(int)$user['id'], hash('sha256', $token), gmdate('Y-m-d H:i:s', time() + 1800), $now]);
+                                try {
+                                    MailService::sendPasswordReset($user, absolute_app_url('?r=reset-password&token=' . rawurlencode($token)));
+                                    $pdo->prepare('UPDATE password_reset_requests SET mail_sent=1 WHERE id=?')->execute([$requestId]);
+                                    Auth::audit('auth.password_reset_requested', 'Password reset email requested', null, 'user', (int)$user['id']);
+                                } catch (\Throwable $mailError) {
+                                    error_log('[OpenLMS password reset mail] ' . $mailError->getMessage());
+                                }
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        error_log('[OpenLMS forgot password] ' . $e->getMessage());
+                    }
+                    $sent = true;
+                }
+            }
+        }
+
+        ob_start(); ?>
+        <div class="auth-wrap"><section class="auth-card card">
+          <div class="brand-mark"><?= e(app_brand_initials()) ?></div>
+          <p class="auth-brand-name"><?= e(app_name()) ?></p>
+          <h1>Forgot password</h1>
+          <?php if($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
+          <?php if($sent): ?>
+            <div class="alert alert-success">If an active account matches that email and mail delivery is available, a one-time reset link has been sent.</div>
+            <p class="hint">The link expires in 30 minutes. Check spam/junk mail if it does not appear.</p>
+          <?php else: ?>
+            <p class="muted">Enter the email address used as your LMS username.</p>
+            <form method="post" autocomplete="off">
+              <input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>">
+              <label>Email / username<input type="email" name="email" required autocomplete="email"></label>
+              <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+            </form>
+          <?php endif; ?>
+          <p class="auth-links"><a href="<?= e(app_url('?r=login')) ?>">Back to sign in</a></p>
+        </section></div>
+        <?php render_page('Forgot password', ob_get_clean(), false);
     }
 
     public static function resetPassword(): void
@@ -88,7 +172,7 @@ final class AuthController
                         $pdo->commit();
                         Auth::revokeAllSessions((int)$row['user_id']);
                         Auth::audit('auth.password_reset', 'Password reset token used', (int)$row['user_id'], 'user', (int)$row['user_id']);
-                        ob_start(); ?><div class="auth-wrap"><section class="auth-card card"><div class="brand-mark">OL</div><h1>Password updated</h1><p>Your one-time reset link is now invalid.</p><a class="btn btn-primary btn-block" href="<?= e(app_url('?r=login')) ?>">Sign in</a></section></div><?php render_page('Password updated', ob_get_clean(), false); return;
+                        ob_start(); ?><div class="auth-wrap"><section class="auth-card card"><div class="brand-mark"><?= e(app_brand_initials()) ?></div><p class="auth-brand-name"><?= e(app_name()) ?></p><h1>Password updated</h1><p>Your one-time reset link is now invalid.</p><a class="btn btn-primary btn-block" href="<?= e(app_url('?r=login')) ?>">Sign in</a></section></div><?php render_page('Password updated', ob_get_clean(), false); return;
                     } catch (\Throwable $e) {
                         if ($pdo->inTransaction()) $pdo->rollBack();
                         $error = 'Unable to reset password.';
@@ -97,9 +181,9 @@ final class AuthController
             }
         }
         ob_start(); ?>
-        <div class="auth-wrap"><section class="auth-card card"><div class="brand-mark">OL</div><h1>Reset password</h1>
+        <div class="auth-wrap"><section class="auth-card card"><div class="brand-mark"><?= e(app_brand_initials()) ?></div><p class="auth-brand-name"><?= e(app_name()) ?></p><h1>Reset password</h1>
         <?php if($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
-        <?php if(!$valid): ?><p>This reset link is invalid, expired, or already used. Ask an administrator for a new one-time reset link.</p><a class="btn" href="<?= e(app_url('?r=login')) ?>">Back to sign in</a>
+        <?php if(!$valid): ?><p>This reset link is invalid, expired, or already used. Request a new one-time reset link from the sign-in page or contact an administrator.</p><a class="btn" href="<?= e(app_url('?r=login')) ?>">Back to sign in</a>
         <?php else: ?><p class="muted">Reset password for <?= e((string)$row['email']) ?>.</p><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="token" value="<?= e($token) ?>"><label>New password<input type="password" name="password" minlength="12" required autocomplete="new-password"></label><label>Confirm password<input type="password" name="confirm_password" minlength="12" required autocomplete="new-password"></label><button class="btn btn-primary btn-block">Set new password</button></form><?php endif; ?></section></div>
         <?php render_page('Reset password', ob_get_clean(), false);
     }
