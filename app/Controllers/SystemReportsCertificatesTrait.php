@@ -28,8 +28,8 @@ trait SystemReportsCertificatesTrait
             $where = '1=1';
             $args = [];
         } else {
-            $countLearners = $pdo->prepare("SELECT COUNT(DISTINCT u.id) FROM users u WHERE EXISTS(SELECT 1 FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.user_id=u.id AND e.status IN ('active','completed') AND c.teacher_id=?) OR EXISTS(SELECT 1 FROM batch_members bm JOIN course_batches cb ON cb.batch_id=bm.batch_id JOIN courses c ON c.id=cb.course_id WHERE bm.user_id=u.id AND c.teacher_id=?)");
-            $countLearners->execute([$uid,$uid]);
+            $countLearners = $pdo->prepare("SELECT COUNT(DISTINCT cm.user_id) FROM courses c JOIN class_subjects cs ON cs.subject_id=c.subject_id JOIN class_members cm ON cm.class_id=cs.class_id WHERE c.teacher_id=? AND c.status='published'");
+            $countLearners->execute([$uid]);
             $countCourses = $pdo->prepare("SELECT COUNT(*) FROM courses WHERE teacher_id=? AND status='published'");$countCourses->execute([$uid]);
             $countCompletions = $pdo->prepare('SELECT COUNT(*) FROM course_completions cc JOIN courses c ON c.id=cc.course_id WHERE c.teacher_id=?');$countCompletions->execute([$uid]);
             $countSubmissions = $pdo->prepare("SELECT COUNT(*) FROM project_submissions ps JOIN projects p ON p.id=ps.project_id JOIN courses c ON c.id=p.course_id WHERE c.teacher_id=? AND ps.status IN ('submitted','graded')");$countSubmissions->execute([$uid]);
@@ -39,7 +39,7 @@ trait SystemReportsCertificatesTrait
         }
 
         $sql = "SELECT c.id,c.title,u.name teacher_name,
-            (SELECT COUNT(DISTINCT u2.id) FROM users u2 WHERE EXISTS(SELECT 1 FROM enrollments e WHERE e.user_id=u2.id AND e.course_id=c.id AND e.status IN ('active','completed')) OR EXISTS(SELECT 1 FROM batch_members bm JOIN course_batches cb ON cb.batch_id=bm.batch_id WHERE bm.user_id=u2.id AND cb.course_id=c.id)) enrollments,
+            (SELECT COUNT(DISTINCT cm.user_id) FROM class_subjects cs JOIN class_members cm ON cm.class_id=cs.class_id WHERE cs.subject_id=c.subject_id) enrollments,
             (SELECT COUNT(*) FROM lessons l JOIN course_sections cs ON cs.id=l.course_section_id WHERE cs.course_id=c.id AND l.status='published') lessons,
             (SELECT COUNT(*) FROM course_completions cc WHERE cc.course_id=c.id) completions,
             (SELECT COUNT(*) FROM project_submissions ps JOIN projects p ON p.id=ps.project_id WHERE p.course_id=c.id AND ps.status='submitted') pending_projects

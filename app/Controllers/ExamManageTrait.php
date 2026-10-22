@@ -53,10 +53,9 @@ trait ExamManageTrait
                 JOIN subjects s ON s.id=c.subject_id
                 WHERE qz.status='published' AND c.status='published' AND s.status='active'
                   AND qz.assessment_type IN ($marks)
-                  AND ((EXISTS(SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=? AND e.status IN ('active','completed')))
-                    OR EXISTS(SELECT 1 FROM course_batches cb JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=c.id AND bm.user_id=?))
+                  AND EXISTS(SELECT 1 FROM class_subjects cs JOIN class_members cm ON cm.class_id=cs.class_id WHERE cs.subject_id=c.subject_id AND cm.user_id=?)
                 ORDER BY COALESCE(qz.starts_at,'0000') DESC";
-        $params = array_merge([(int)$u['id']], $types, [(int)$u['id'], (int)$u['id']]);
+        $params = array_merge([(int)$u['id']], $types, [(int)$u['id']]);
         $st = $pdo->prepare($sql);
         $st->execute($params);
         $rows = $st->fetchAll();

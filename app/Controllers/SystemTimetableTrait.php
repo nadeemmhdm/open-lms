@@ -33,9 +33,9 @@ trait SystemTimetableTrait
                     if ($action === 'timetable') {
                         $batchId = (int)($_POST['batch_id'] ?? 0) ?: null;
                         if ($batchId !== null) {
-                            $st = $pdo->prepare('SELECT COUNT(*) FROM course_batches WHERE course_id=? AND batch_id=?');
+                            $st = $pdo->prepare('SELECT COUNT(*) FROM courses c JOIN class_subjects cs ON cs.subject_id=c.subject_id JOIN batches b ON b.class_id=cs.class_id WHERE c.id=? AND b.id=?');
                             $st->execute([$cid,$batchId]);
-                            if (!(int)$st->fetchColumn()) throw new \RuntimeException('The selected batch is not assigned to this course.');
+                            if (!(int)$st->fetchColumn()) throw new \RuntimeException('The selected batch class does not have this course subject.');
                         }
                         $weekday = max(1,min(7,(int)($_POST['weekday'] ?? 1)));
                         $start = (string)($_POST['starts_at'] ?? '');
@@ -67,18 +67,18 @@ trait SystemTimetableTrait
         $courses = $manage ? self::manageableCourses($u) : [];
         if ($manage) {
             if ($global) {
-                $batches = $pdo->query('SELECT DISTINCT b.id,b.name FROM batches b JOIN course_batches cb ON cb.batch_id=b.id ORDER BY b.name')->fetchAll();
+                $batches = $pdo->query('SELECT DISTINCT b.id,b.name FROM batches b JOIN class_subjects cs ON cs.class_id=b.class_id ORDER BY b.name')->fetchAll();
             } else {
-                $st = $pdo->prepare('SELECT DISTINCT b.id,b.name FROM batches b JOIN course_batches cb ON cb.batch_id=b.id JOIN courses c ON c.id=cb.course_id WHERE c.teacher_id=? ORDER BY b.name');$st->execute([$uid]);$batches=$st->fetchAll();
+                $st = $pdo->prepare('SELECT DISTINCT b.id,b.name FROM batches b JOIN class_subjects cs ON cs.class_id=b.class_id JOIN courses c ON c.subject_id=cs.subject_id WHERE c.teacher_id=? ORDER BY b.name');$st->execute([$uid]);$batches=$st->fetchAll();
             }
         } else $batches = [];
 
         if ($global) {
             $entryWhere = '1=1';$entryArgs=[];$liveWhere='1=1';$liveArgs=[];
         } elseif (in_array('student',$u['roles'],true)) {
-            $courseAccess = "(EXISTS(SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=? AND e.status IN ('active','completed')) OR EXISTS(SELECT 1 FROM course_batches cb JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=c.id AND bm.user_id=?))";
+            $courseAccess = "EXISTS(SELECT 1 FROM class_subjects cs JOIN class_members cm ON cm.class_id=cs.class_id WHERE cs.subject_id=c.subject_id AND cm.user_id=?)";
             $entryWhere = $courseAccess." AND (t.batch_id IS NULL OR EXISTS(SELECT 1 FROM batch_members bm2 WHERE bm2.batch_id=t.batch_id AND bm2.user_id=?))";
-            $entryArgs = [$uid,$uid,$uid];$liveWhere=$courseAccess;$liveArgs=[$uid,$uid];
+            $entryArgs = [$uid,$uid];$liveWhere=$courseAccess;$liveArgs=[$uid];
         } elseif (in_array('teacher',$u['roles'],true)) {
             $entryWhere='c.teacher_id=?';$entryArgs=[$uid];$liveWhere='c.teacher_id=?';$liveArgs=[$uid];
         } else {
@@ -91,7 +91,7 @@ trait SystemTimetableTrait
         ob_start(); ?>
         <div class="page-head"><div><h1>Timetable & live classes</h1><p class="muted">Weekly schedule and optional external live class links.</p></div></div>
         <?php if($message):?><div class="alert alert-success"><?=e($message)?></div><?php endif;?><?php if($error):?><div class="alert alert-danger"><?=e($error)?></div><?php endif;?>
-        <?php if($manage):?><div class="grid-2"><section class="card"><h2>Add timetable entry</h2><form method="post"><input type="hidden" name="_csrf" value="<?=e(Csrf::token())?>"><input type="hidden" name="action" value="timetable"><label>Course<select name="course_id" required><?php foreach($courses as $c):?><option value="<?=(int)$c['id']?>"><?=e($c['title'])?></option><?php endforeach;?></select></label><label>Batch<select name="batch_id"><option value="">All enrolled learners</option><?php foreach($batches as $b):?><option value="<?=(int)$b['id']?>"><?=e($b['name'])?></option><?php endforeach;?></select><small>The server verifies that the batch is assigned to the selected course.</small></label><div class="form-row"><label>Weekday<select name="weekday"><?php foreach(['Mon'=>1,'Tue'=>2,'Wed'=>3,'Thu'=>4,'Fri'=>5,'Sat'=>6,'Sun'=>7] as $d=>$v):?><option value="<?=$v?>"><?=$d?></option><?php endforeach;?></select></label><label>Room<input name="room_label" maxlength="120"></label></div><div class="form-row"><label>Starts<input type="time" name="starts_at" required></label><label>Ends<input type="time" name="ends_at" required></label></div><button class="btn">Add</button></form></section>
+        <?php if($manage):?><div class="grid-2"><section class="card"><h2>Add timetable entry</h2><form method="post"><input type="hidden" name="_csrf" value="<?=e(Csrf::token())?>"><input type="hidden" name="action" value="timetable"><label>Course<select name="course_id" required><?php foreach($courses as $c):?><option value="<?=(int)$c['id']?>"><?=e($c['title'])?></option><?php endforeach;?></select></label><label>Batch<select name="batch_id"><option value="">All enrolled learners</option><?php foreach($batches as $b):?><option value="<?=(int)$b['id']?>"><?=e($b['name'])?></option><?php endforeach;?></select><small>The server verifies that the batch class has the selected course subject.</small></label><div class="form-row"><label>Weekday<select name="weekday"><?php foreach(['Mon'=>1,'Tue'=>2,'Wed'=>3,'Thu'=>4,'Fri'=>5,'Sat'=>6,'Sun'=>7] as $d=>$v):?><option value="<?=$v?>"><?=$d?></option><?php endforeach;?></select></label><label>Room<input name="room_label" maxlength="120"></label></div><div class="form-row"><label>Starts<input type="time" name="starts_at" required></label><label>Ends<input type="time" name="ends_at" required></label></div><button class="btn">Add</button></form></section>
         <?php if(feature_enabled('live_classes')):?><section class="card"><h2>Schedule live class</h2><form method="post"><input type="hidden" name="_csrf" value="<?=e(Csrf::token())?>"><input type="hidden" name="action" value="live"><label>Course<select name="course_id" required><?php foreach($courses as $c):?><option value="<?=(int)$c['id']?>"><?=e($c['title'])?></option><?php endforeach;?></select></label><label>Title<input name="live_title" maxlength="180" required></label><label>Join URL<input type="url" name="join_url" required></label><div class="form-row"><label>Starts (<?=e(app_timezone())?>)<input type="datetime-local" name="live_starts_at" required></label><label>Ends (<?=e(app_timezone())?>)<input type="datetime-local" name="live_ends_at"></label></div><button class="btn">Schedule</button></form></section><?php endif;?></div><?php endif;?>
         <section class="card"><h2>Weekly timetable</h2><div class="compact-list"><?php foreach($entries as $e1):?><div><span><strong><?=e($e1['course_title'])?></strong><small><?=e('Day '.$e1['weekday'].' · '.$e1['starts_at'].'–'.$e1['ends_at'].' · '.($e1['room_label']?:'No room'))?></small></span><span class="badge"><?=e($e1['batch_name']??'All')?></span></div><?php endforeach;?><?php if(!$entries):?><p class="muted">No timetable entries available.</p><?php endif;?></div></section>
         <?php if($live):?><section class="card"><h2>Upcoming live classes</h2><div class="compact-list"><?php foreach($live as $l):?><a href="<?=e($l['join_url'])?>" target="_blank" rel="noopener noreferrer"><span><strong><?=e($l['title'])?></strong><small><?=e($l['course_title'].' · '.format_app_datetime((string)$l['starts_at']).' '.app_timezone())?></small></span><span class="badge">Join</span></a><?php endforeach;?></div></section><?php endif;?>

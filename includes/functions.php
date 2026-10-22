@@ -67,7 +67,23 @@ function app_brand_initials(): string
 
 function nav_link(string $route, string $label): string
 {
-    $isActive = ($_GET['r'] ?? 'dashboard') === $route;
+    $currentRoute = (string)($_GET['r'] ?? 'dashboard');
+    $groups = [
+        'subjects' => ['subjects','subject','course','lesson','material-download'],
+        'doubts' => ['doubts'],
+        'projects' => ['projects','project','project-file'],
+        'assessments' => ['assessments','quiz-attempt','exam-attempt','attempt-review'],
+        'exams' => ['exams','exam-manage','exam-review'],
+        'quizzes' => ['quizzes','quiz-manage'],
+        'questions' => ['questions','question-bank'],
+        'profile' => ['profile'],
+        'mfa-setup' => ['mfa-setup'],
+        'fees' => ['fees','payment-return','payment-webhook'],
+        'support' => ['support','support-ticket'],
+        'onboarding' => ['onboarding','join'],
+        'backup' => ['backup','backup-download'],
+    ];
+    $isActive = in_array($currentRoute, $groups[$route] ?? [$route], true);
     $active = $isActive ? ' active' : '';
     $current = $isActive ? ' aria-current="page" data-nav-active="1"' : '';
     return '<a class="nav-link' . $active . '" data-nav-route="' . e($route) . '"' . $current . ' href="' . e(app_url('?r=' . $route)) . '">' . e($label) . '</a>';
@@ -83,24 +99,25 @@ function render_page(string $title, string $content, bool $withShell = true): vo
     $isParent = in_array('parent', $roles, true);
     $isParentOnly = $isParent && !(bool)array_intersect(['student','teacher','hod','administrator','super_admin','examiner'], $roles);
     $canManageCourses = $user && \OpenLMS\Core\Auth::can('courses.manage');
+    $canViewLearning = $isStudent || $canManageCourses;
     ?><!doctype html><html lang="en" data-theme="auto"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title><?= e($title) ?> · <?= e($appName) ?></title><link rel="stylesheet" href="<?= e(asset_url('assets/css/app.css')) ?>"><link rel="stylesheet" href="<?= e(asset_url('assets/css/modules.css')) ?>"></head><body>
     <?php if ($withShell && $user): ?>
     <div class="app-shell"><aside class="sidebar">
       <a class="brand" href="<?= e(app_url('?r=dashboard')) ?>"><span class="brand-mark"><?= e(app_brand_initials()) ?></span><strong><?= e($appName) ?></strong></a>
       <nav>
         <?= nav_link('dashboard','Dashboard') ?>
-        <?php if(!$isParentOnly): ?><?= nav_link('subjects','Courses') ?><?php endif; ?>
+        <?php if(!$isParentOnly && $canViewLearning): ?><?= nav_link('subjects','Courses') ?><?php endif; ?>
         <?php if(!$isParentOnly && ($isStudent || $canManageCourses || $isPrivileged)): ?><?= nav_link('doubts','Doubts & Q&A') ?><?php endif; ?>
-        <?php if(!$isParentOnly && feature_enabled('attendance')): ?><?= nav_link('attendance','Attendance') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('attendance') && ($isStudent || \OpenLMS\Core\Auth::can('attendance.manage'))): ?><?= nav_link('attendance','Attendance') ?><?php endif; ?>
         <?php if(!$isParentOnly && feature_enabled('question_bank') && \OpenLMS\Core\Auth::can('questions.manage')): ?><?= nav_link('questions','Questions') ?><?php endif; ?>
         <?php if(!$isParentOnly && feature_enabled('quizzes') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('quizzes','Quizzes') ?><?php endif; ?>
         <?php if(!$isParentOnly && feature_enabled('exams') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('exams','Exams') ?><?php endif; ?>
         <?php if(!$isParentOnly && $isStudent && (feature_enabled('quizzes') || feature_enabled('exams'))): ?><?= nav_link('assessments','Assessments') ?><?php endif; ?>
-        <?php if(!$isParentOnly && feature_enabled('projects')): ?><?= nav_link('projects','Projects') ?><?php endif; ?>
-        <?php if(!$isParentOnly && feature_enabled('gradebook')): ?><?= nav_link('gradebook','Gradebook') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('projects') && ($isStudent || \OpenLMS\Core\Auth::can('projects.manage'))): ?><?= nav_link('projects','Projects') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('gradebook') && ($isStudent || \OpenLMS\Core\Auth::can('reports.view'))): ?><?= nav_link('gradebook','Gradebook') ?><?php endif; ?>
         <?php if(feature_enabled('notifications')): ?><?= nav_link('notifications','Notifications') ?><?php endif; ?>
         <?php if(!$isParentOnly && feature_enabled('timetable')): ?><?= nav_link('timetable','Timetable') ?><?php endif; ?>
-        <?php if(!$isParentOnly && feature_enabled('certificates')): ?><?= nav_link('certificates','Certificates') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('certificates') && ($isStudent || \OpenLMS\Core\Auth::can('reports.view'))): ?><?= nav_link('certificates','Certificates') ?><?php endif; ?>
         <?php if(!$isParentOnly && feature_enabled('reports') && \OpenLMS\Core\Auth::can('reports.view')): ?><?= nav_link('reports','Reports') ?><?php endif; ?>
         <?php if(feature_enabled('fee_management') && ($isPrivileged || $isStudent)): ?><?= nav_link('fees','Fees') ?><?php endif; ?>
         <?php if(feature_enabled('parent_portal') && $isParent): ?><?= nav_link('parent-portal','Parent portal') ?><?php endif; ?>
@@ -483,8 +500,8 @@ function notify_course_students(int $courseId, string $title, string $body, stri
     if ($courseId < 1 || !feature_enabled('notifications')) return;
     try {
         $pdo = \OpenLMS\Core\Database::connection();
-        $st = $pdo->prepare("SELECT DISTINCT u.id FROM users u WHERE u.status='active' AND EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.id AND r.name='student') AND (EXISTS(SELECT 1 FROM enrollments e WHERE e.user_id=u.id AND e.course_id=? AND e.status IN ('active','completed')) OR EXISTS(SELECT 1 FROM batch_members bm JOIN course_batches cb ON cb.batch_id=bm.batch_id WHERE bm.user_id=u.id AND cb.course_id=?))");
-        $st->execute([$courseId, $courseId]);
+        $st = $pdo->prepare("SELECT DISTINCT u.id FROM courses c JOIN class_subjects cs ON cs.subject_id=c.subject_id JOIN class_members cm ON cm.class_id=cs.class_id JOIN users u ON u.id=cm.user_id WHERE c.id=? AND c.status='published' AND u.status='active' AND EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.id AND r.name='student')");
+        $st->execute([$courseId]);
         foreach ($st->fetchAll(\PDO::FETCH_COLUMN) as $uid) notify_user((int)$uid, $title, $body, $type, $linkUrl);
     } catch (\Throwable) {}
 }

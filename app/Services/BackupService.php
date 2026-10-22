@@ -19,7 +19,7 @@ final class BackupService
      */
     private const TABLES = [
         'roles','permissions','users','user_roles','role_permissions','user_login_history',
-        'academic_years','departments','classes','sections','batches','semesters','batch_members',
+        'academic_years','departments','classes','sections','batches','semesters','batch_members','class_members','class_subjects',
         'subjects','courses','course_batches','enrollments','course_sections','lessons','lesson_links','lesson_prerequisites','learning_materials','lesson_progress',
         'attendance_sessions','attendance_records','attendance_corrections',
         'question_banks','questions','question_options','quizzes','quiz_questions','exam_attempts','attempt_questions','exam_answers','exam_events',
@@ -27,7 +27,7 @@ final class BackupService
         'feature_settings','app_settings','notifications','announcements','announcement_media','certificates','timetable_entries','live_classes','parent_student_links',
         'fee_invoices','fee_payments','payment_transactions','support_tickets','support_replies',
         'registration_invites','registration_invite_contexts','registration_invite_courses','registration_invite_history',
-        'doubts','doubt_replies','course_completions','mfa_credentials','audit_logs'
+        'doubts','doubt_replies','doubt_reply_reactions','course_completions','mfa_credentials','audit_logs'
     ];
 
     public static function createEncrypted(int $actorUserId): array

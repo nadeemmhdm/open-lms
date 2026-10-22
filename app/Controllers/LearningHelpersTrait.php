@@ -11,7 +11,7 @@ trait LearningHelpersTrait
         $roles=(array)($user['roles']??[]);
         if(in_array('parent',$roles,true) && !(bool)array_intersect(['student','teacher','hod','administrator','super_admin'], $roles)) return [];
         if(in_array('student',$roles,true)){
-            $sql="SELECT s.* FROM subjects s WHERE s.status='active' AND EXISTS (SELECT 1 FROM courses c WHERE c.subject_id=s.id AND c.status='published' AND (EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=? AND e.status IN ('active','completed')) OR EXISTS (SELECT 1 FROM course_batches cb INNER JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=c.id AND bm.user_id=?))) ORDER BY s.name";$st=$pdo->prepare($sql);$st->execute([(int)$user['id'],(int)$user['id']]);return $st->fetchAll();
+            $sql="SELECT DISTINCT s.* FROM subjects s INNER JOIN class_subjects cs ON cs.subject_id=s.id INNER JOIN class_members cm ON cm.class_id=cs.class_id WHERE s.status='active' AND cm.user_id=? AND EXISTS (SELECT 1 FROM courses c WHERE c.subject_id=s.id AND c.status='published') ORDER BY s.name";$st=$pdo->prepare($sql);$st->execute([(int)$user['id']]);return $st->fetchAll();
         }
         if(in_array('teacher',$roles,true) && !self::canManageSubjects($user)){ $st=$pdo->prepare("SELECT DISTINCT s.* FROM subjects s JOIN courses c ON c.subject_id=s.id WHERE s.status='active' AND c.teacher_id=? AND c.status<>'archived' ORDER BY s.name");$st->execute([(int)$user['id']]);return $st->fetchAll(); }
         return $pdo->query('SELECT * FROM subjects ORDER BY status, name')->fetchAll();
@@ -27,7 +27,7 @@ trait LearningHelpersTrait
     private static function courseRowsForSubject(PDO $pdo,int $subjectId,array $user): array
     {
         $base='SELECT c.*,u.name teacher_name FROM courses c LEFT JOIN users u ON u.id=c.teacher_id WHERE c.subject_id=?';$args=[$subjectId];
-        if(in_array('student',$user['roles'],true)){$base.=" AND c.status='published' AND (EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=? AND e.status IN ('active','completed')) OR EXISTS (SELECT 1 FROM course_batches cb INNER JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=c.id AND bm.user_id=?))";$args[]=(int)$user['id'];$args[]=(int)$user['id'];}
+        if(in_array('student',$user['roles'],true)){$base.=" AND c.status='published' AND EXISTS (SELECT 1 FROM class_subjects cs INNER JOIN class_members cm ON cm.class_id=cs.class_id WHERE cs.subject_id=c.subject_id AND cm.user_id=?)";$args[]=(int)$user['id'];}
         elseif(in_array('teacher',$user['roles'],true)&&!self::canManageSubjects($user)){$base.=' AND c.teacher_id=? AND c.status<>\'archived\'';$args[]=(int)$user['id'];}
         else{$base.=" AND c.status<>'archived'";}
         $base.=' ORDER BY c.id DESC';$st=$pdo->prepare($base);$st->execute($args);return $st->fetchAll();

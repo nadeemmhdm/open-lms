@@ -15,6 +15,7 @@ Open LMS provides a complete foundation for institutions that need a practical L
 
 - Role-based access for Super Admin, Administrator, Teacher, Student, HOD, Examiner, and Parent accounts.
 - Academic years, departments, classes, sections, batches, semesters, subjects, and courses.
+- Class-based subject access: assign a subject once to a class and every student in that class receives the same published courses for that subject. Batches remain available for cohort, attendance, timetable, and onboarding workflows but do not grant subject access.
 - Secure bulk student onboarding with optional year, batch, and automatic course enrollment.
 - Teacher/staff invitation links with expiry and single-use controls.
 - Course structure using **Subject → Course → Chapter → Lesson**.
@@ -25,7 +26,8 @@ Open LMS provides a complete foundation for institutions that need a practical L
 - Inline lesson image/video playback with authorization-checked file delivery.
 - External lesson image, video, YouTube, Vimeo, MP4, and general resource links.
 - Attendance, question bank, quizzes, exams, autosave, gradebook, and projects.
-- Student Doubts & Q&A with teacher replies and resolved-state controls.
+- Project submissions with optional protected file uploads or a GitHub repository URL for code projects.
+- Private Student Doubts & Q&A: a student sees only their own threads; assigned teaching staff/admins can reply, clear/reopen threads, edit/resend their own messages, and users can Like/Dislike replies.
 - Announcements for all users, courses, or batches.
 - Announcement image/video links and protected image/video uploads.
 - SMTP delivery for password recovery, login alerts, and optional announcement email.
@@ -92,7 +94,7 @@ Open LMS uses ordered SQL migrations. Existing installations should not be reset
 3. Preserve `config/config.php`, `storage/install.lock`, the live database, and existing private uploads.
 4. Open the LMS. Missing migrations are applied automatically.
 
-The stable `v1.0.0` codebase currently includes migrations `001` through `013`.
+The stable `v1.0.0` codebase currently includes migrations `001` through `014`.
 
 ## Authentication security
 
@@ -131,6 +133,16 @@ Mail delivery is additionally limited to prevent SMTP abuse:
 - maximum 10 reset requests per IP per hour.
 
 Reset tokens are random, stored only as hashes, single-use, and expire after 30 minutes. Completing a password reset revokes existing login sessions.
+
+## Class-based subject access
+
+Student learning access is class-first. Administrators assign students to classes and assign subjects to those classes. A student can see a course only when:
+
+- the course is published,
+- its subject is active, and
+- that subject is assigned to the student's class.
+
+Draft courses remain hidden from students even when a direct course URL is known. Batch membership and optional enrollment records do not override this rule. Existing batch/course access is migrated once into class assignments during migration `014` so upgrades retain access while future management uses the class model.
 
 ## Lessons and content authoring
 

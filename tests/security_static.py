@@ -31,7 +31,7 @@ assert "Only a Super Admin can reset MFA enrollment" in admin and "Auth::verifyC
 assert "$_SERVER['REQUEST_METHOD'] !== 'POST'" in authc and "Csrf::validate" in authc, 'logout must be POST + CSRF'
 assert "mfa_pending_attempts" in mfa and "mfa_pending_locked_until" in mfa, 'MFA challenge throttle missing'
 assert "Teachers can publish only to their own courses" in system, 'teacher announcement scope guard missing'
-assert "The selected batch is not assigned to this course" in system, 'timetable course/batch scope validation missing'
+assert "The selected batch class does not have this course subject" in system and 'class_subjects' in system, 'timetable class-subject/batch scope validation missing'
 assert "bm2.batch_id=t.batch_id" in system, 'student timetable batch privacy filter missing'
 assert "c.teacher_id=?" in system, 'teacher report/course scope missing'
 assert "function require_feature" in helpers and "render_status_page(404" in helpers, 'server-side module disablement missing'
@@ -95,6 +95,7 @@ assert 'public_id' in doubt_controller and '100000' in doubt_controller and '999
 modules_css = (ROOT / 'assets/css/modules.css').read_text()
 project_list = (ROOT / 'app/Controllers/ProjectListTrait.php').read_text()
 project_view = (ROOT / 'app/Controllers/ProjectViewTrait.php').read_text()
+backup_service = (ROOT / 'app/Services/BackupService.php').read_text()
 academics = (ROOT / 'app/Controllers/AcademicController.php').read_text()
 subjects = (ROOT / 'app/Controllers/SubjectLearningTrait.php').read_text()
 assert '.sidebar>nav' in modules_css and 'overflow-y:auto!important' in modules_css and 'height:100dvh' in modules_css, 'sidebar links must own the scroll viewport'
@@ -154,6 +155,23 @@ assert "'support' => SupportController::index()" in index_php and "require_featu
 assert 'random_int(100000,99999999)' in support_controller, 'support ticket public IDs must remain 6-8 digits'
 assert "status']==='resolved'" in support_controller and 'Replies are now locked' in support_controller, 'resolved support tickets must reject further replies'
 assert "'support'" in installer, 'fresh installer must seed support module state'
+
+# v1.0 class-based learning, private Q&A and repository submissions.
+course_policy = (ROOT / 'app/Policies/CoursePolicy.php').read_text()
+academic_controller = (ROOT / 'app/Controllers/AcademicController.php').read_text()
+doubt_controller = (ROOT / 'app/Controllers/DoubtController.php').read_text()
+project_actions = (ROOT / 'app/Controllers/ProjectActionsTrait.php').read_text()
+project_view = (ROOT / 'app/Controllers/ProjectViewTrait.php').read_text()
+assert 'class_subjects' in learning_helpers and 'class_members' in learning_helpers, 'student course listing must be class-subject based'
+assert 'class_subjects' in course_policy and "status'] ?? '') !== 'published'" in course_policy, 'student direct course access must require class subject and published status'
+assert 'course_batches' not in course_policy and 'enrollments' not in course_policy, 'batch/enrollment must not grant student subject access'
+assert 'student_ids[]' in academic_controller and 'assign_class_subject' in academic_controller and 'remove_class_subject' in academic_controller, 'class student/subject management missing'
+assert "d.student_id=?" in doubt_controller and "if ($isStudent) return (int)$doubt['student_id'] === $userId" in doubt_controller, 'student doubts must remain private to their owner'
+assert 'edit_doubt' in doubt_controller and 'edit_reply' in doubt_controller and 'value="react"' in doubt_controller, 'doubt edit/resend/reaction controls missing'
+assert 'doubt_reply_reactions' in doubt_controller and 'Mark clear' in doubt_controller and '>Cleared</option>' in doubt_controller, 'cleared Q&A section/reactions missing'
+assert 'repository_url' in project_actions and 'github.com' in project_actions and 'GitHub repository URL' in project_view, 'GitHub repository project submission missing'
+assert "'class_members'" in backup_service and "'class_subjects'" in backup_service and "'doubt_reply_reactions'" in backup_service, 'encrypted backup must include class/Q&A v1 data'
+assert "'subjects' => ['subjects','subject','course','lesson','material-download']" in helpers and 'data-nav-active' in helpers, 'nested learning routes must keep Courses navigation active'
 
 # Stable v1.0 password recovery, branding, chapter management, backup V3 and active-nav checks.
 backup_service = (ROOT / 'app/Services/BackupService.php').read_text()

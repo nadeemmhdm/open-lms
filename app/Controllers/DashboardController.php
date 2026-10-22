@@ -26,8 +26,8 @@ final class DashboardController
         $courseCount = 0;
 
         if ($isStudent) {
-            $stmt = $pdo->prepare("SELECT COUNT(DISTINCT c.id) FROM courses c WHERE c.status='published' AND (EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=? AND e.status IN ('active','completed')) OR EXISTS (SELECT 1 FROM course_batches cb INNER JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=c.id AND bm.user_id=?))");
-            $stmt->execute([$userId, $userId]);
+            $stmt = $pdo->prepare("SELECT COUNT(DISTINCT c.id) FROM courses c JOIN class_subjects cs ON cs.subject_id=c.subject_id JOIN class_members cm ON cm.class_id=cs.class_id WHERE c.status='published' AND cm.user_id=?");
+            $stmt->execute([$userId]);
             $myCourses = (int)$stmt->fetchColumn();
             $stmt = $pdo->prepare('SELECT COUNT(*) FROM lesson_progress WHERE user_id=? AND progress_percent=100');
             $stmt->execute([$userId]);

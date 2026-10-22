@@ -41,13 +41,13 @@ final class InviteService
         if (!$courseIds) throw new \InvalidArgumentException('Select at least one course for student enrollment.');
         self::validateRole($pdo, 'student', $creatorId);
 
-        $batch = $pdo->prepare('SELECT b.id,b.name,ay.id academic_year_id,ay.name academic_year_name FROM batches b JOIN academic_years ay ON ay.id=b.academic_year_id WHERE b.id=? AND ay.id=? LIMIT 1');
+        $batch = $pdo->prepare('SELECT b.id,b.name,b.class_id,ay.id academic_year_id,ay.name academic_year_name FROM batches b JOIN academic_years ay ON ay.id=b.academic_year_id WHERE b.id=? AND ay.id=? LIMIT 1');
         $batch->execute([$batchId,$academicYearId]);
         $batchRow = $batch->fetch();
         if (!$batchRow) throw new \InvalidArgumentException('The selected batch does not belong to the selected academic year.');
 
         $placeholders = implode(',', array_fill(0, count($courseIds), '?'));
-        $courseCheck = $pdo->prepare("SELECT id,title FROM courses WHERE status='published' AND id IN ({$placeholders}) ORDER BY title");
+        $courseCheck = $pdo->prepare("SELECT id,title,subject_id FROM courses WHERE status='published' AND id IN ({$placeholders}) ORDER BY title");
         $courseCheck->execute($courseIds);
         $courseRows = $courseCheck->fetchAll();
         if (count($courseRows) !== count($courseIds)) throw new \InvalidArgumentException('One or more selected courses are unavailable.');
@@ -60,13 +60,13 @@ final class InviteService
             $now = gmdate('Y-m-d H:i:s');
             $pdo->prepare('INSERT INTO registration_invite_contexts (public_id,academic_year_id,batch_id,created_at) VALUES (?,?,?,?)')
                 ->execute([$publicId,$academicYearId,$batchId,$now]);
+            $classId=(int)($batchRow['class_id']??0);
+            if($classId<1) throw new \InvalidArgumentException('The selected batch must be linked to a class before student onboarding.');
+            $subjectIds=[];
+            foreach($courseRows as $row)$subjectIds[]=(int)$row['subject_id'];
+            foreach(array_unique($subjectIds) as $subjectId){$exists=$pdo->prepare('SELECT COUNT(*) FROM class_subjects WHERE class_id=? AND subject_id=?');$exists->execute([$classId,$subjectId]);if(!(int)$exists->fetchColumn())$pdo->prepare('INSERT INTO class_subjects (class_id,subject_id,assigned_at) VALUES (?,?,?)')->execute([$classId,$subjectId,$now]);}
             foreach ($courseIds as $courseId) {
                 $pdo->prepare('INSERT INTO registration_invite_courses (public_id,course_id) VALUES (?,?)')->execute([$publicId,$courseId]);
-                $exists = $pdo->prepare('SELECT COUNT(*) FROM course_batches WHERE course_id=? AND batch_id=?');
-                $exists->execute([$courseId,$batchId]);
-                if (!(int)$exists->fetchColumn()) {
-                    $pdo->prepare('INSERT INTO course_batches (course_id,batch_id,assigned_at) VALUES (?,?,?)')->execute([$courseId,$batchId,$now]);
-                }
             }
             self::commit($pdo);
             $created['academic_year_id'] = $academicYearId;
@@ -267,6 +267,8 @@ final class InviteService
         $member = $pdo->prepare('SELECT COUNT(*) FROM batch_members WHERE batch_id=? AND user_id=?');
         $member->execute([$batchId,$userId]);
         if (!(int)$member->fetchColumn()) $pdo->prepare('INSERT INTO batch_members (batch_id,user_id,assigned_at) VALUES (?,?,?)')->execute([$batchId,$userId,$now]);
+        $classSt=$pdo->prepare('SELECT class_id FROM batches WHERE id=?');$classSt->execute([$batchId]);$classId=(int)$classSt->fetchColumn();
+        if($classId>0){$exists=$pdo->prepare('SELECT COUNT(*) FROM class_members WHERE class_id=? AND user_id=?');$exists->execute([$classId,$userId]);if(!(int)$exists->fetchColumn())$pdo->prepare('INSERT INTO class_members (class_id,user_id,assigned_at) VALUES (?,?,?)')->execute([$classId,$userId,$now]);}
 
         $courses = $pdo->prepare('SELECT course_id FROM registration_invite_courses WHERE public_id=? ORDER BY course_id');
         $courses->execute([$publicId]);

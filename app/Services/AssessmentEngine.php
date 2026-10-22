@@ -10,7 +10,7 @@ final class AssessmentEngine
 {
     public static function quiz(int $id): ?array
     {
-        $st=Database::connection()->prepare('SELECT qz.*,c.title course_title,c.teacher_id,c.status course_status,s.status subject_status FROM quizzes qz JOIN courses c ON c.id=qz.course_id JOIN subjects s ON s.id=c.subject_id WHERE qz.id=?');
+        $st=Database::connection()->prepare('SELECT qz.*,c.title course_title,c.teacher_id,c.subject_id,c.status course_status,s.status subject_status FROM quizzes qz JOIN courses c ON c.id=qz.course_id JOIN subjects s ON s.id=c.subject_id WHERE qz.id=?');
         $st->execute([$id]); return $st->fetch()?:null;
     }
 
@@ -22,7 +22,7 @@ final class AssessmentEngine
     public static function canStudentAccess(array $quiz,array $user): bool
     {
         if(!in_array('student',$user['roles'],true) || $quiz['status']!=='published') return false;
-        return CoursePolicy::canViewCourse(['id'=>$quiz['course_id'],'teacher_id'=>$quiz['teacher_id'],'status'=>$quiz['course_status'],'subject_status'=>$quiz['subject_status']],$user);
+        return CoursePolicy::canViewCourse(['id'=>$quiz['course_id'],'subject_id'=>$quiz['subject_id'],'teacher_id'=>$quiz['teacher_id'],'status'=>$quiz['course_status'],'subject_status'=>$quiz['subject_status']],$user);
     }
 
     public static function start(array $quiz,array $user): array
@@ -52,7 +52,7 @@ final class AssessmentEngine
 
     public static function attempt(int $id): ?array
     {
-        $st=Database::connection()->prepare('SELECT a.*,qz.title,qz.course_id,qz.assessment_type,qz.negative_marking,qz.review_policy,qz.result_publication,qz.ends_at,qz.require_fullscreen,qz.restrict_copy,qz.log_focus,qz.pass_marks,qz.total_marks,c.title course_title,c.teacher_id,c.status course_status,s.status subject_status FROM exam_attempts a JOIN quizzes qz ON qz.id=a.quiz_id JOIN courses c ON c.id=qz.course_id JOIN subjects s ON s.id=c.subject_id WHERE a.id=?');$st->execute([$id]);return $st->fetch()?:null;
+        $st=Database::connection()->prepare('SELECT a.*,qz.title,qz.course_id,qz.assessment_type,qz.negative_marking,qz.review_policy,qz.result_publication,qz.ends_at,qz.require_fullscreen,qz.restrict_copy,qz.log_focus,qz.pass_marks,qz.total_marks,c.title course_title,c.teacher_id,c.subject_id,c.status course_status,s.status subject_status FROM exam_attempts a JOIN quizzes qz ON qz.id=a.quiz_id JOIN courses c ON c.id=qz.course_id JOIN subjects s ON s.id=c.subject_id WHERE a.id=?');$st->execute([$id]);return $st->fetch()?:null;
     }
 
     public static function questionsForAttempt(int $attemptId): array

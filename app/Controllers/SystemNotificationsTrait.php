@@ -98,8 +98,8 @@ trait SystemNotificationsTrait
         $ann = [];
         if ($announcementsEnabled) {
             if (in_array('student', $u['roles'], true)) {
-                $st = $pdo->prepare("SELECT a.* FROM announcements a WHERE a.published_at IS NOT NULL AND (a.expires_at IS NULL OR a.expires_at>?) AND (a.audience='all' OR (a.audience='course' AND EXISTS(SELECT 1 FROM courses c WHERE c.id=a.course_id AND (EXISTS(SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=? AND e.status IN ('active','completed')) OR EXISTS(SELECT 1 FROM course_batches cb JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=c.id AND bm.user_id=?))) OR (a.audience='batch' AND EXISTS(SELECT 1 FROM batch_members bm WHERE bm.batch_id=a.batch_id AND bm.user_id=?))) ORDER BY a.published_at DESC LIMIT 100");
-                $st->execute([$now,(int)$u['id'],(int)$u['id'],(int)$u['id']]);
+                $st = $pdo->prepare("SELECT a.* FROM announcements a WHERE a.published_at IS NOT NULL AND (a.expires_at IS NULL OR a.expires_at>?) AND (a.audience='all' OR (a.audience='course' AND EXISTS(SELECT 1 FROM courses c JOIN class_subjects cs ON cs.subject_id=c.subject_id JOIN class_members cm ON cm.class_id=cs.class_id WHERE c.id=a.course_id AND c.status='published' AND cm.user_id=?)) OR (a.audience='batch' AND EXISTS(SELECT 1 FROM batch_members bm WHERE bm.batch_id=a.batch_id AND bm.user_id=?))) ORDER BY a.published_at DESC LIMIT 100");
+                $st->execute([$now,(int)$u['id'],(int)$u['id']]);
                 $ann = $st->fetchAll();
             } elseif ($globalPublisher) {
                 $st = $pdo->prepare('SELECT * FROM announcements WHERE published_at IS NOT NULL AND (expires_at IS NULL OR expires_at>?) ORDER BY published_at DESC LIMIT 100');
@@ -205,7 +205,7 @@ trait SystemNotificationsTrait
             $st=$pdo->prepare("SELECT DISTINCT u.email FROM users u JOIN batch_members bm ON bm.user_id=u.id WHERE bm.batch_id=? AND u.status='active' AND u.email<>''");$st->execute([$batchId]);return $st->fetchAll(\PDO::FETCH_COLUMN);
         }
         if ($audience === 'course' && $courseId) {
-            $st=$pdo->prepare("SELECT DISTINCT u.email FROM users u WHERE u.status='active' AND u.email<>'' AND (EXISTS(SELECT 1 FROM enrollments e WHERE e.user_id=u.id AND e.course_id=? AND e.status IN ('active','completed')) OR EXISTS(SELECT 1 FROM batch_members bm JOIN course_batches cb ON cb.batch_id=bm.batch_id WHERE bm.user_id=u.id AND cb.course_id=?) OR EXISTS(SELECT 1 FROM courses c WHERE c.id=? AND c.teacher_id=u.id))");$st->execute([$courseId,$courseId,$courseId]);return $st->fetchAll(\PDO::FETCH_COLUMN);
+            $st=$pdo->prepare("SELECT DISTINCT u.email FROM users u WHERE u.status='active' AND u.email<>'' AND (EXISTS(SELECT 1 FROM courses c JOIN class_subjects cs ON cs.subject_id=c.subject_id JOIN class_members cm ON cm.class_id=cs.class_id WHERE c.id=? AND cm.user_id=u.id) OR EXISTS(SELECT 1 FROM courses c WHERE c.id=? AND c.teacher_id=u.id))");$st->execute([$courseId,$courseId]);return $st->fetchAll(\PDO::FETCH_COLUMN);
         }
         return [];
     }

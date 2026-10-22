@@ -16,11 +16,8 @@ final class CoursePolicy
         if (self::canManage($course, $user)) return true;
         if (!in_array('student', $user['roles'] ?? [], true) || ($course['status'] ?? '') !== 'published' || (($course['subject_status'] ?? 'active') !== 'active')) return false;
         $pdo = Database::connection();
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments e WHERE e.course_id=? AND e.user_id=? AND e.status IN ('active','completed')");
-        $stmt->execute([(int)$course['id'], (int)$user['id']]);
-        if ((int)$stmt->fetchColumn() > 0) return true;
-        $stmt = $pdo->prepare('SELECT COUNT(*) FROM course_batches cb INNER JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=? AND bm.user_id=?');
-        $stmt->execute([(int)$course['id'], (int)$user['id']]);
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM class_subjects cs INNER JOIN class_members cm ON cm.class_id=cs.class_id WHERE cs.subject_id=? AND cm.user_id=?');
+        $stmt->execute([(int)$course['subject_id'], (int)$user['id']]);
         return (int)$stmt->fetchColumn() > 0;
     }
 
