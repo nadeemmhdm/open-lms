@@ -1,0 +1,149 @@
+name: Publish Open LMS v1.0.0 stable
+
+on:
+  push:
+    branches:
+      - release-v1-publish
+    paths:
+      - '.github/workflows/publish-stable-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout publisher branch
+        uses: actions/checkout@v4
+        with:
+          path: publisher
+
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: target
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, mbstring, fileinfo, openssl, zlib
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Reconstruct verified stable patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat publisher/.stable-v1/patch.part* | base64 -d > /tmp/openlms-v1.patch.gz
+          echo "ee7b694eaee186b7bea50ff4bae94e940f3215c95635bbed2d1a331634fcee26  /tmp/openlms-v1.patch.gz" | sha256sum -c -
+          gzip -dc /tmp/openlms-v1.patch.gz > /tmp/openlms-v1.patch
+          echo "3b199d695a9c62bd27bd02a8cc6957265c5a326861d556e045eb9d1e946da088  /tmp/openlms-v1.patch" | sha256sum -c -
+          cd target
+          test "$(git rev-parse HEAD)" = "9cc316bb4d7658c0051b3dde1f7f02ba0ef98b5c"
+          git apply --index /tmp/openlms-v1.patch
+
+      - name: Verify stable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd target
+          count=0
+          while IFS= read -r -d '' f; do
+            php -l "$f" >/dev/null
+            count=$((count+1))
+          done < <(find . -type f -name '*.php' -print0)
+          test "$count" -eq 68
+          node --check assets/js/app.js
+          python3 tests/full_schema_smoke.py
+          php tests/totp_rfc_test.php
+          node tests/qrcode_smoke.js
+          python3 tests/security_static.py
+          test "$(find . -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')" -eq 3
+          test -f README.md
+          test -f SECURITY.md
+          test -f RELEASE.md
+
+      - name: Verify encrypted backup and restore round trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd target
+          cat > /tmp/openlms-backup-roundtrip.php <<'PHP'
+          <?php
+          declare(strict_types=1);
+          $root = getcwd();
+          require $root . '/includes/functions.php';
+          spl_autoload_register(function(string $class) use ($root): void {
+              $prefix = 'OpenLMS\\';
+              if (!str_starts_with($class, $prefix)) return;
+              $file = $root . '/app/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+              if (is_file($file)) require $file;
+          });
+
+          use OpenLMS\Core\Config;
+          use OpenLMS\Core\Database;
+          use OpenLMS\Services\Migrator;
+          use OpenLMS\Services\BackupService;
+
+          $db = '/tmp/open-lms-v1-backup-roundtrip.sqlite';
+          @unlink($db);
+          $config = '/tmp/open-lms-v1-backup-config.php';
+          $key = bin2hex(random_bytes(32));
+          file_put_contents($config, '<?php return ' . var_export([
+              'app' => ['name'=>'Open LMS','env'=>'test','debug'=>false,'timezone'=>'UTC','base_url'=>'http://localhost','key'=>$key],
+              'database' => ['driver'=>'sqlite','sqlite_path'=>$db],
+              'uploads' => ['max_bytes'=>10485760],
+              'security' => ['session_name'=>'open_lms_test','login_max_attempts'=>5,'login_window_minutes'=>15,'require_mfa_for_super_admin'=>false],
+          ], true) . ';');
+          Config::load($config);
+          Database::reset();
+          Migrator::migrateConfigured();
+          $pdo = Database::connection();
+          $now = gmdate('Y-m-d H:i:s');
+          $pdo->prepare('INSERT INTO roles (id,name,label,is_system) VALUES (1,?,?,1)')->execute(['super_admin','Super Admin']);
+          $pdo->prepare('INSERT INTO users (id,name,email,password_hash,status,created_at,updated_at) VALUES (1,?,?,?,?,?,?)')
+              ->execute(['Before Backup','stable@example.test',password_hash('BackupTest!123', PASSWORD_DEFAULT),'active',$now,$now]);
+          $pdo->exec('INSERT INTO user_roles (user_id,role_id) VALUES (1,1)');
+          $migrationsBefore = (int)$pdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn();
+          [$name, $size] = BackupService::createEncrypted(1);
+          if ($size < 100 || !is_file(BackupService::pathForDownload($name))) throw new RuntimeException('Encrypted backup file was not created.');
+          $pdo->exec("UPDATE users SET name='After Backup' WHERE id=1");
+          $pdo->prepare('INSERT INTO password_reset_requests (email_hash,ip_address,mail_sent,requested_at) VALUES (?,?,0,?)')
+              ->execute([hash('sha256','stable@example.test'),'127.0.0.1',$now]);
+          BackupService::restoreEncrypted($name, 1);
+          $restored = (string)$pdo->query('SELECT name FROM users WHERE id=1')->fetchColumn();
+          if ($restored !== 'Before Backup') throw new RuntimeException('Backup restore did not restore application data.');
+          $migrationsAfter = (int)$pdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn();
+          if ($migrationsAfter !== $migrationsBefore) throw new RuntimeException('Backup restore changed schema migration state.');
+          $resetRequests = (int)$pdo->query('SELECT COUNT(*) FROM password_reset_requests')->fetchColumn();
+          if ($resetRequests !== 0) throw new RuntimeException('Backup restore revived password-reset request state.');
+          @unlink(BackupService::pathForDownload($name));
+          @unlink($db);
+          @unlink($config);
+          echo "PASS: encrypted Backup V3 create/download/restore round trip.\n";
+          PHP
+          php /tmp/openlms-backup-roundtrip.php
+          rm -f storage/backups/open-lms-*.olmsbak
+
+      - name: Publish clean stable source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd target
+          EXPECTED="9cc316bb4d7658c0051b3dde1f7f02ba0ef98b5c"
+          ACTUAL="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED"
+          git status --short
+          git config user.name "Nadeem"
+          git config user.email "160517299+nadeemmhdm@users.noreply.github.com"
+          git add -A
+          test -n "$(git status --porcelain)"
+          git commit -m "release: Open LMS v1.0.0 stable"
+          git push origin HEAD:main
