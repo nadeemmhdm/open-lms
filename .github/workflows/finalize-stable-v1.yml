@@ -1,0 +1,133 @@
+name: Finalize Open LMS v1.0.0
+
+on:
+  push:
+    branches:
+      - stable-v1-finalize
+    paths:
+      - '.github/workflows/finalize-stable-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout finalizer payload
+        uses: actions/checkout@v4
+        with:
+          path: publisher
+
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: target
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, mbstring, fileinfo, openssl, zlib
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Apply exact final delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_MAIN='01e5fd03c7544481057812b201453a74792491cd'
+          test "$(git -C target rev-parse HEAD)" = "$EXPECTED_MAIN"
+          cat publisher/.stable-v1-final/final8.part.* > /tmp/openlms-final8.b64
+          test "$(wc -c < /tmp/openlms-final8.b64)" -eq 24816
+          base64 -d /tmp/openlms-final8.b64 > /tmp/openlms-final8.tar.xz
+          echo '36918fcebfa5b649f2ba6ecfcde76698320ed5c0f1a0178a47aa96e32d4e3a78  /tmp/openlms-final8.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/openlms-final8.tar.xz -C target
+          cd target
+          git add -A
+          test "$(git write-tree)" = 'b0a96ea9b86169943ffd66c86b7f5102cecc1c75'
+
+      - name: Verify stable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd target
+          count=0
+          while IFS= read -r -d '' f; do
+            php -l "$f" >/dev/null
+            count=$((count+1))
+          done < <(find . -type f -name '*.php' -print0)
+          test "$count" -eq 67
+          node --check assets/js/app.js
+          python3 tests/full_schema_smoke.py
+          python3 tests/security_static.py
+          php tests/totp_rfc_test.php
+          node tests/qrcode_smoke.js
+          test "$(find . -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')" -eq 3
+
+      - name: Verify encrypted Backup V3 round trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd target
+          cat > /tmp/openlms-backup-roundtrip.php <<'PHP'
+          <?php
+          declare(strict_types=1);
+          $root = getcwd();
+          require $root . '/includes/functions.php';
+          spl_autoload_register(function(string $class) use ($root): void {
+              $prefix = 'OpenLMS\\';
+              if (!str_starts_with($class, $prefix)) return;
+              $file = $root . '/app/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+              if (is_file($file)) require $file;
+          });
+          use OpenLMS\Core\Config;
+          use OpenLMS\Core\Database;
+          use OpenLMS\Services\Migrator;
+          use OpenLMS\Services\BackupService;
+          $db='/tmp/openlms-v1.sqlite'; @unlink($db);
+          $cfg='/tmp/openlms-v1-config.php';
+          file_put_contents($cfg,'<?php return '.var_export([
+            'app'=>['name'=>'Open LMS','env'=>'test','debug'=>false,'timezone'=>'UTC','base_url'=>'http://localhost','key'=>bin2hex(random_bytes(32))],
+            'database'=>['driver'=>'sqlite','sqlite_path'=>$db],
+            'uploads'=>['max_bytes'=>10485760],
+            'security'=>['session_name'=>'open_lms_test','login_max_attempts'=>5,'login_window_minutes'=>15,'require_mfa_for_super_admin'=>false],
+          ],true).';');
+          Config::load($cfg); Database::reset(); Migrator::migrateConfigured();
+          $pdo=Database::connection(); $now=gmdate('Y-m-d H:i:s');
+          $pdo->prepare('INSERT INTO roles (id,name,label,is_system) VALUES (1,?,?,1)')->execute(['super_admin','Super Admin']);
+          $pdo->prepare('INSERT INTO users (id,name,email,password_hash,status,created_at,updated_at) VALUES (1,?,?,?,?,?,?)')->execute(['Before Backup','stable@example.test',password_hash('BackupTest!123',PASSWORD_DEFAULT),'active',$now,$now]);
+          $pdo->exec('INSERT INTO user_roles (user_id,role_id) VALUES (1,1)');
+          $migrationCount=(int)$pdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn();
+          [$name,$size]=BackupService::createEncrypted(1);
+          if($size<100 || !is_file(BackupService::pathForDownload($name))) throw new RuntimeException('Backup creation/download failed.');
+          $pdo->exec("UPDATE users SET name='After Backup' WHERE id=1");
+          $pdo->prepare('INSERT INTO password_reset_requests (email_hash,ip_address,mail_sent,requested_at) VALUES (?,?,0,?)')->execute([hash('sha256','stable@example.test'),'127.0.0.1',$now]);
+          BackupService::restoreEncrypted($name,1);
+          if((string)$pdo->query('SELECT name FROM users WHERE id=1')->fetchColumn()!=='Before Backup') throw new RuntimeException('Application data was not restored.');
+          if((int)$pdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn()!==$migrationCount) throw new RuntimeException('Migration state changed during restore.');
+          if((int)$pdo->query('SELECT COUNT(*) FROM password_reset_requests')->fetchColumn()!==0) throw new RuntimeException('Reset-request state was restored unexpectedly.');
+          @unlink(BackupService::pathForDownload($name)); @unlink($db); @unlink($cfg);
+          echo "PASS: encrypted Backup V3 round trip.\n";
+          PHP
+          php /tmp/openlms-backup-roundtrip.php
+          rm -f storage/backups/open-lms-*.olmsbak
+
+      - name: Publish final stable tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd target
+          EXPECTED_MAIN='01e5fd03c7544481057812b201453a74792491cd'
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "$EXPECTED_MAIN"
+          git config user.name 'Nadeem'
+          git config user.email '160517299+nadeemmhdm@users.noreply.github.com'
+          git add -A
+          test "$(git write-tree)" = 'b0a96ea9b86169943ffd66c86b7f5102cecc1c75'
+          git commit -m 'release: finalize Open LMS v1.0.0 stable'
+          git push origin HEAD:main
