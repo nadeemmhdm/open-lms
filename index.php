@@ -10,6 +10,7 @@ use OpenLMS\Services\Migrator;
 use OpenLMS\Controllers\AuthController;
 use OpenLMS\Controllers\MfaController;
 use OpenLMS\Controllers\DashboardController;
+use OpenLMS\Controllers\ProfileController;
 use OpenLMS\Controllers\AdminController;
 use OpenLMS\Controllers\DiagnosticsController;
 use OpenLMS\Controllers\AcademicController;
@@ -80,6 +81,7 @@ try {
 
     match ($route) {
         'dashboard' => DashboardController::show(),
+        'profile' => ProfileController::show(),
         'mfa-setup' => MfaController::setup(),
         'academics' => AcademicController::index(),
         'subjects' => LearningController::subjects(),

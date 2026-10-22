@@ -12,9 +12,57 @@
     });
   });
 
-  document.querySelector('[data-menu-toggle]')?.addEventListener('click', () => {
-    document.body.classList.toggle('menu-open');
+  const body = document.body;
+  const menuButton = document.querySelector('[data-menu-toggle]');
+  const desktopSidebar = window.matchMedia('(min-width: 721px)');
+  const savedHidden = localStorage.getItem('open-lms-sidebar-hidden') === '1';
+  if (savedHidden && desktopSidebar.matches) body.classList.add('sidebar-hidden');
+
+  const syncMenuA11y = () => {
+    if (!menuButton) return;
+    const expanded = desktopSidebar.matches ? !body.classList.contains('sidebar-hidden') : body.classList.contains('menu-open');
+    menuButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  };
+  const closeMobileMenu = () => { body.classList.remove('menu-open'); syncMenuA11y(); };
+
+  menuButton?.addEventListener('click', () => {
+    if (desktopSidebar.matches) {
+      body.classList.toggle('sidebar-hidden');
+      localStorage.setItem('open-lms-sidebar-hidden', body.classList.contains('sidebar-hidden') ? '1' : '0');
+    } else {
+      body.classList.toggle('menu-open');
+    }
+    syncMenuA11y();
   });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMobileMenu(); });
+  desktopSidebar.addEventListener?.('change', () => {
+    body.classList.remove('menu-open');
+    if (!desktopSidebar.matches) body.classList.remove('sidebar-hidden');
+    else if (localStorage.getItem('open-lms-sidebar-hidden') === '1') body.classList.add('sidebar-hidden');
+    syncMenuA11y();
+  });
+  document.querySelectorAll('.sidebar .nav-link').forEach((link) => link.addEventListener('click', () => { if (!desktopSidebar.matches) closeMobileMenu(); }));
+  syncMenuA11y();
+
+  // Universal profile entry without duplicating server-side role navigation logic.
+  const sidebarNav = document.querySelector('.sidebar nav');
+  if (sidebarNav && !sidebarNav.querySelector('[href*="r=profile"]')) {
+    const profile = document.createElement('a');
+    profile.className = 'nav-link' + (new URLSearchParams(location.search).get('r') === 'profile' ? ' active' : '');
+    profile.href = '?r=profile';
+    profile.textContent = 'My profile';
+    const securityLink = Array.from(sidebarNav.querySelectorAll('.nav-link')).find((link) => link.getAttribute('href')?.includes('r=mfa-setup'));
+    sidebarNav.insertBefore(profile, securityLink || null);
+  }
+  const userChip = document.querySelector('.user-chip');
+  if (userChip) {
+    userChip.setAttribute('role', 'link');
+    userChip.setAttribute('tabindex', '0');
+    userChip.setAttribute('title', 'Open my profile');
+    const openProfile = () => { window.location.href = '?r=profile'; };
+    userChip.addEventListener('click', openProfile);
+    userChip.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProfile(); } });
+  }
 
   const driver = document.getElementById('db-driver');
   const mysql = document.getElementById('mysql-fields');

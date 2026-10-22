@@ -51,3 +51,11 @@ for prefix, needle in required_gates.items():
     assert needle in src, f'missing feature gate in {prefix} controller bundle: {needle}'
 
 print(f"PASS: CSRF on literal POST forms ({len(php_files)} PHP files scanned), privilege/MFA guards, module gates, timetable/report/announcement scoping, notification wiring.")
+
+# Dashboard privacy / universal profile regression checks.
+dashboard = (ROOT / 'app/Controllers/DashboardController.php').read_text()
+index_php = (ROOT / 'index.php').read_text()
+app_js = (ROOT / 'assets/js/app.js').read_text()
+assert 'WHERE actor_user_id=?' in dashboard, 'non-admin dashboard activity must be scoped to current actor'
+assert "'profile' => ProfileController::show()" in index_php, 'profile route missing'
+assert "r=profile" in app_js and "My profile" in app_js, 'profile navigation missing'

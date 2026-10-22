@@ -3,6 +3,7 @@ namespace OpenLMS\Services;
 
 use OpenLMS\Core\Database;
 use PDO;
+use PDOException;
 
 final class Installer
 {
@@ -60,6 +61,7 @@ final class Installer
             return [false, 'MySQL host, database name and username are required.'];
         }
 
+        $stage = 'server preflight';
         try {
             if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt')) {
                 return [false, 'PHP OpenSSL is required for MFA secret encryption and authenticated backups.'];
@@ -70,6 +72,10 @@ final class Installer
             if (!class_exists('finfo')) {
                 return [false, 'PHP Fileinfo is required for secure learning-material uploads.'];
             }
+
+            self::assertWritableDirectory($root . '/config', 'config');
+            self::assertWritableDirectory($root . '/storage', 'storage');
+
             if ($driver === 'sqlite') {
                 if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
                     return [false, 'PDO_SQLITE is not available on this server. Use MySQL/MariaDB.'];
@@ -81,8 +87,14 @@ final class Installer
                 return [false, 'PDO_MYSQL is not available on this server.'];
             }
 
+            $stage = 'database connection';
             $pdo = Database::connection($db);
+            $pdo->query('SELECT 1');
+
+            $stage = 'database migration';
             self::migrate($pdo, $driver);
+
+            $stage = 'initial data seed';
             $pdo->beginTransaction();
             try {
                 self::seed($pdo, $driver, $name, $email, $password, $institution);
@@ -92,6 +104,7 @@ final class Installer
                 throw $seedError;
             }
 
+            $stage = 'configuration write';
             $appKey = bin2hex(random_bytes(32));
             $config = "<?php\nreturn " . var_export([
                 'app' => [
@@ -118,24 +131,72 @@ final class Installer
                 return [false, 'Database was initialized, but config/config.php could not be written. Check permissions.'];
             }
             @chmod($root . '/config/config.php', 0600);
-            file_put_contents($root . '/storage/install.lock', gmdate('c') . "\n", LOCK_EX);
+            $stage = 'install lock write';
+            if (file_put_contents($root . '/storage/install.lock', gmdate('c') . "\n", LOCK_EX) === false) {
+                @unlink($root . '/config/config.php');
+                return [false, 'Database was initialized, but storage/install.lock could not be written. Check storage/ permissions and retry.'];
+            }
             return [true, null];
         } catch (\Throwable $e) {
-            error_log('[OpenLMS installer] ' . $e->getMessage());
-            return [false, 'Installation failed: ' . self::safeError($e)];
+            error_log('[OpenLMS installer][' . $stage . '] ' . $e->getMessage());
+            return [false, 'Installation failed at ' . $stage . ': ' . self::safeError($e, $stage)];
         }
     }
 
-    private static function safeError(\Throwable $e): string
+    private static function safeError(\Throwable $e, string $stage): string
     {
         $message = strtolower($e->getMessage());
-        if (str_contains($message, 'sqlstate') || str_contains($message, 'access denied') || str_contains($message, 'database') || str_contains($message, 'connection')) {
-            return 'Database connection or migration failed. Recheck the database host, name, username, password, and PDO driver shown by diagnostics.';
+        $code = $e instanceof PDOException ? self::pdoErrorCode($e) : null;
+
+        if ($stage === 'database connection') {
+            return match ($code) {
+                1044 => 'MySQL rejected access to this database. Verify the exact InfinityFree database name and database user.',
+                1045 => 'MySQL rejected the username/password. Use the hosting-account database password and exact database username.',
+                1049 => 'MySQL says the database does not exist. Copy the full database name from InfinityFree MySQL Databases.',
+                2002, 2003, 2005 => 'Cannot reach the database host. On InfinityFree use the exact sqlXXX.infinityfree.com hostname shown in MySQL Databases, not localhost.',
+                default => str_contains($message, 'unable to open database file')
+                    ? 'SQLite could not open storage/open-lms.sqlite. Check that storage/ is writable and SQLite is permitted by the host.'
+                    : 'Database connection failed' . ($code ? ' (DB error ' . $code . ')' : '') . '. Verify the driver and connection details.',
+            };
         }
+
+        if ($stage === 'database migration') {
+            $detail = preg_replace('/\s+/', ' ', $e->getMessage()) ?: 'unknown migration error';
+            $detail = preg_replace('/(?:password|passwd|pwd)\s*[=:]\s*[^\s;]+/i', 'password=[hidden]', $detail) ?: $detail;
+            if (strlen($detail) > 260) $detail = substr($detail, 0, 257) . '...';
+            return 'Schema migration failed' . ($code ? ' (DB error ' . $code . ')' : '') . ': ' . $detail;
+        }
+
+        if ($stage === 'initial data seed') {
+            if ($code === 1062 || str_contains($message, 'unique constraint failed')) {
+                return 'The database contains partial data from an earlier setup attempt. The installer can repair known Open LMS partial states, but this database has an unexpected duplicate. Use the same admin email and retry; if it persists, use an empty database.';
+            }
+            return 'Initial LMS data could not be saved' . ($code ? ' (DB error ' . $code . ')' : '') . '. The database may contain data from another installation.';
+        }
+
         if (str_contains($message, 'permission') || str_contains($message, 'writable') || str_contains($message, 'write')) {
             return 'A required application directory could not be written. Check config/ and storage/ permissions.';
         }
-        return 'A server-side setup step failed. Review the private PHP error log and the installer diagnostics, then retry.';
+        return 'A server-side setup step failed. Review the private PHP error log and installer diagnostics.';
+    }
+
+    private static function pdoErrorCode(PDOException $e): ?int
+    {
+        $info = $e->errorInfo;
+        if (is_array($info) && isset($info[1]) && is_numeric($info[1])) return (int)$info[1];
+        return is_numeric($e->getCode()) ? (int)$e->getCode() : null;
+    }
+
+    private static function assertWritableDirectory(string $directory, string $label): void
+    {
+        if (!is_dir($directory) || !is_writable($directory)) {
+            throw new \RuntimeException($label . ' directory is not writable.');
+        }
+        $probe = $directory . '/.openlms-write-' . bin2hex(random_bytes(6));
+        if (file_put_contents($probe, 'ok', LOCK_EX) === false) {
+            throw new \RuntimeException($label . ' directory write probe failed.');
+        }
+        @unlink($probe);
     }
 
     public static function migrate(PDO $pdo, string $driver): void
@@ -145,6 +206,18 @@ final class Installer
 
     private static function seed(PDO $pdo, string $driver, string $name, string $email, string $password, string $institution): void
     {
+        $now = gmdate('Y-m-d H:i:s');
+
+        // Retry safety: never silently attach a new Super Admin to an unrelated/non-empty database.
+        $existingUsers = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+        if ($existingUsers > 0) {
+            $check = $pdo->prepare('SELECT id FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1');
+            $check->execute([$email]);
+            if (!$check->fetchColumn()) {
+                throw new \RuntimeException('Open LMS users already exist in this database with a different administrator email.');
+            }
+        }
+
         $roles = [
             'super_admin' => 'Super Admin',
             'administrator' => 'Administrator',
@@ -155,21 +228,17 @@ final class Installer
             'parent' => 'Parent / Guardian',
         ];
         foreach ($roles as $slug => $label) {
-            $stmt = $pdo->prepare('INSERT INTO roles (name, label, is_system) VALUES (?, ?, 1)');
-            $stmt->execute([$slug, $label]);
+            self::insertIfMissing($pdo, 'roles', 'name', $slug, ['label' => $label, 'is_system' => 1]);
         }
 
         $permissions = ['users.manage','roles.manage','settings.manage','features.manage','academics.manage','courses.manage','lessons.manage','attendance.manage','questions.manage','exams.manage','projects.manage','reports.view','audit.view'];
         foreach ($permissions as $permission) {
-            $stmt = $pdo->prepare('INSERT INTO permissions (name, label) VALUES (?, ?)');
-            $stmt->execute([$permission, ucwords(str_replace(['.','_'], ' ', $permission))]);
+            self::insertIfMissing($pdo, 'permissions', 'name', $permission, ['label' => ucwords(str_replace(['.','_'], ' ', $permission))]);
         }
 
-        $superId = (int) $pdo->query("SELECT id FROM roles WHERE name = 'super_admin' LIMIT 1")->fetchColumn();
+        $superId = self::idBy($pdo, 'roles', 'name', 'super_admin');
         $permissionIds = $pdo->query('SELECT id FROM permissions')->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($permissionIds as $pid) {
-            $pdo->prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)')->execute([$superId, $pid]);
-        }
+        foreach ($permissionIds as $pid) self::insertPairIfMissing($pdo, 'role_permissions', 'role_id', $superId, 'permission_id', (int)$pid);
 
         $rolePermissionMap = [
             'administrator' => ['users.manage','settings.manage','features.manage','academics.manage','courses.manage','lessons.manage','attendance.manage','questions.manage','exams.manage','projects.manage','reports.view','audit.view'],
@@ -178,37 +247,93 @@ final class Installer
             'examiner' => ['questions.manage','exams.manage','reports.view'],
         ];
         foreach ($rolePermissionMap as $roleName => $names) {
-            $r = $pdo->prepare('SELECT id FROM roles WHERE name = ?');
-            $r->execute([$roleName]);
-            $roleId = (int) $r->fetchColumn();
+            $roleId = self::idBy($pdo, 'roles', 'name', $roleName);
             foreach ($names as $permissionName) {
-                $p = $pdo->prepare('SELECT id FROM permissions WHERE name = ?');
-                $p->execute([$permissionName]);
-                $permissionId = (int) $p->fetchColumn();
-                if ($roleId && $permissionId) {
-                    $pdo->prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)')->execute([$roleId, $permissionId]);
-                }
+                $permissionId = self::idBy($pdo, 'permissions', 'name', $permissionName);
+                if ($roleId && $permissionId) self::insertPairIfMissing($pdo, 'role_permissions', 'role_id', $roleId, 'permission_id', $permissionId);
             }
         }
 
-        $now = gmdate('Y-m-d H:i:s');
-        $stmt = $pdo->prepare('INSERT INTO users (name, email, password_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), 'active', $now, $now]);
-        $userId = (int) $pdo->lastInsertId();
-        $pdo->prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)')->execute([$userId, $superId]);
+        $findUser = $pdo->prepare('SELECT id FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1');
+        $findUser->execute([$email]);
+        $userId = (int)($findUser->fetchColumn() ?: 0);
+        if ($userId > 0) {
+            $pdo->prepare('UPDATE users SET name=?,password_hash=?,status=?,updated_at=? WHERE id=?')
+                ->execute([$name, password_hash($password, PASSWORD_DEFAULT), 'active', $now, $userId]);
+        } else {
+            $stmt = $pdo->prepare('INSERT INTO users (name,email,password_hash,status,created_at,updated_at) VALUES (?,?,?,?,?,?)');
+            $stmt->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), 'active', $now, $now]);
+            $userId = (int)$pdo->lastInsertId();
+        }
+        self::insertPairIfMissing($pdo, 'user_roles', 'user_id', $userId, 'role_id', $superId);
 
-        $stmt = $pdo->prepare('INSERT INTO app_settings (setting_key, setting_value, is_public, updated_at) VALUES (?, ?, ?, ?)');
-        $stmt->execute(['institution_name', $institution, 1, $now]);
-        $stmt->execute(['installed_at', gmdate('c'), 0, $now]);
-        $stmt->execute(['mfa_required_roles', json_encode(['super_admin']), 0, $now]);
+        self::upsertSetting($pdo, 'institution_name', $institution, 1, $now);
+        self::upsertSetting($pdo, 'installed_at', gmdate('c'), 0, $now);
+        self::upsertSetting($pdo, 'mfa_required_roles', json_encode(['super_admin']), 0, $now);
 
         $features = ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','certificates','timetable','parent_portal','live_classes','fee_management','search','backup_restore'];
         foreach ($features as $feature) {
             $enabled = in_array($feature, ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','search','backup_restore'], true) ? 1 : 0;
-            $pdo->prepare('INSERT INTO feature_settings (feature_key, enabled, updated_at) VALUES (?, ?, ?)')->execute([$feature, $enabled, $now]);
+            $find = $pdo->prepare('SELECT id FROM feature_settings WHERE feature_key=? LIMIT 1');
+            $find->execute([$feature]);
+            if ($find->fetchColumn()) {
+                $pdo->prepare('UPDATE feature_settings SET enabled=?,updated_at=? WHERE feature_key=?')->execute([$enabled, $now, $feature]);
+            } else {
+                $pdo->prepare('INSERT INTO feature_settings (feature_key,enabled,updated_at) VALUES (?,?,?)')->execute([$feature, $enabled, $now]);
+            }
         }
 
-        $pdo->prepare('INSERT INTO audit_logs (actor_user_id, action, description, entity_type, entity_id, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$userId, 'install.complete', 'Open LMS installed and first Super Admin created', 'user', $userId, null, $now]);
+        $audit = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE actor_user_id=? AND action='install.complete'");
+        $audit->execute([$userId]);
+        if ((int)$audit->fetchColumn() === 0) {
+            $pdo->prepare('INSERT INTO audit_logs (actor_user_id,action,description,entity_type,entity_id,ip_address,created_at) VALUES (?,?,?,?,?,?,?)')
+                ->execute([$userId, 'install.complete', 'Open LMS installed and first Super Admin created', 'user', $userId, null, $now]);
+        }
+    }
+
+    private static function idBy(PDO $pdo, string $table, string $column, string $value): int
+    {
+        $allowed = ['roles' => ['name'], 'permissions' => ['name']];
+        if (!isset($allowed[$table]) || !in_array($column, $allowed[$table], true)) throw new \LogicException('Invalid installer lookup.');
+        $stmt = $pdo->prepare("SELECT id FROM {$table} WHERE {$column}=? LIMIT 1");
+        $stmt->execute([$value]);
+        return (int)($stmt->fetchColumn() ?: 0);
+    }
+
+    private static function insertIfMissing(PDO $pdo, string $table, string $keyColumn, string $keyValue, array $values): void
+    {
+        $allowed = ['roles' => ['name','label','is_system'], 'permissions' => ['name','label']];
+        if (!isset($allowed[$table]) || !in_array($keyColumn, $allowed[$table], true)) throw new \LogicException('Invalid installer insert.');
+        $check = $pdo->prepare("SELECT id FROM {$table} WHERE {$keyColumn}=? LIMIT 1");
+        $check->execute([$keyValue]);
+        if ($check->fetchColumn()) return;
+        $columns = array_merge([$keyColumn], array_keys($values));
+        foreach ($columns as $column) if (!in_array($column, $allowed[$table], true)) throw new \LogicException('Invalid installer insert column.');
+        $placeholders = implode(',', array_fill(0, count($columns), '?'));
+        $pdo->prepare('INSERT INTO ' . $table . ' (' . implode(',', $columns) . ') VALUES (' . $placeholders . ')')
+            ->execute(array_merge([$keyValue], array_values($values)));
+    }
+
+    private static function insertPairIfMissing(PDO $pdo, string $table, string $aCol, int $a, string $bCol, int $b): void
+    {
+        $allowed = [
+            'role_permissions' => ['role_id','permission_id'],
+            'user_roles' => ['user_id','role_id'],
+        ];
+        if (!isset($allowed[$table]) || !in_array($aCol, $allowed[$table], true) || !in_array($bCol, $allowed[$table], true)) throw new \LogicException('Invalid installer relation.');
+        $check = $pdo->prepare("SELECT COUNT(*) FROM {$table} WHERE {$aCol}=? AND {$bCol}=?");
+        $check->execute([$a,$b]);
+        if ((int)$check->fetchColumn() === 0) $pdo->prepare("INSERT INTO {$table} ({$aCol},{$bCol}) VALUES (?,?)")->execute([$a,$b]);
+    }
+
+    private static function upsertSetting(PDO $pdo, string $key, ?string $value, int $isPublic, string $now): void
+    {
+        $find = $pdo->prepare('SELECT id FROM app_settings WHERE setting_key=? LIMIT 1');
+        $find->execute([$key]);
+        if ($find->fetchColumn()) {
+            $pdo->prepare('UPDATE app_settings SET setting_value=?,is_public=?,updated_at=? WHERE setting_key=?')->execute([$value,$isPublic,$now,$key]);
+        } else {
+            $pdo->prepare('INSERT INTO app_settings (setting_key,setting_value,is_public,updated_at) VALUES (?,?,?,?)')->execute([$key,$value,$isPublic,$now]);
+        }
     }
 }

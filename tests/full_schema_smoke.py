@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable SQLite smoke test for Open LMS migrations 001-006."""
+"""Portable SQLite smoke test for Open LMS migrations 001-007."""
 from pathlib import Path
 import os, sqlite3, tempfile
 
@@ -10,7 +10,7 @@ db = sqlite3.connect(path)
 db.execute('PRAGMA foreign_keys=ON')
 try:
     migrations = sorted(ROOT.glob('database/migrations/*_sqlite.sql'))
-    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006']
+    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006','007']
     for migration in migrations:
         db.executescript(migration.read_text(encoding='utf-8'))
     db.commit()
@@ -28,6 +28,9 @@ try:
     }
     missing = sorted(required - tables)
     assert not missing, f'missing tables: {missing}'
+
+    # On a fresh install, 007 removes Phase-6 feature defaults so the installer seed can run without duplicate keys.
+    assert db.execute("SELECT COUNT(*) FROM feature_settings WHERE feature_key IN ('announcements','search','backup_restore')").fetchone()[0] == 0
 
     # Duplicate-sensitive records must be rejected.
     db.execute("INSERT INTO users(name,email,password_hash,status,created_at,updated_at) VALUES('A','a@test','x','active',datetime('now'),datetime('now'))")
@@ -50,7 +53,7 @@ try:
     db.execute("INSERT INTO backup_history(file_name,driver,size_bytes,created_by,created_at) VALUES('test.olmsbak','sqlite',1,?,datetime('now'))", (uid,))
     assert db.execute('PRAGMA foreign_key_check').fetchall() == []
     assert len(tables) >= 59
-    print('PASS: migrations 001-006, required LMS tables, unique constraints and foreign-key integrity.')
+    print('PASS: migrations 001-007, required LMS tables, unique constraints and foreign-key integrity.')
 finally:
     db.close()
     try: os.unlink(path)

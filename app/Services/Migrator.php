@@ -4,6 +4,7 @@ namespace OpenLMS\Services;
 use OpenLMS\Core\Config;
 use OpenLMS\Core\Database;
 use PDO;
+use PDOException;
 
 final class Migrator
 {
@@ -49,14 +50,40 @@ final class Migrator
 
             try {
                 if ($driver === 'mysql') {
-                    foreach (self::splitStatements($sql) as $statement) {
-                        $pdo->exec($statement);
+                    foreach (self::splitStatements($sql) as $index => $statement) {
+                        try {
+                            $pdo->exec($statement);
+                        } catch (PDOException $statementError) {
+                            if (!self::isRetrySafeDuplicateDdl($statementError, $statement)) {
+                                throw new \RuntimeException(
+                                    'Migration ' . basename($file) . ' statement ' . ($index + 1) . ' failed: ' . self::compactDbMessage($statementError),
+                                    0,
+                                    $statementError
+                                );
+                            }
+                        }
                     }
                 } else {
-                    $pdo->exec($sql);
+                    try {
+                        $pdo->exec($sql);
+                    } catch (PDOException $statementError) {
+                        throw new \RuntimeException(
+                            'Migration ' . basename($file) . ' failed: ' . self::compactDbMessage($statementError),
+                            0,
+                            $statementError
+                        );
+                    }
                 }
-                $stmt = $pdo->prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
-                $stmt->execute([$version, gmdate('Y-m-d H:i:s')]);
+                try {
+                    $stmt = $pdo->prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
+                    $stmt->execute([$version, gmdate('Y-m-d H:i:s')]);
+                } catch (PDOException $versionError) {
+                    throw new \RuntimeException(
+                        'Migration ' . basename($file) . ' could not record completion: ' . self::compactDbMessage($versionError),
+                        0,
+                        $versionError
+                    );
+                }
                 if ($useTransaction && $pdo->inTransaction()) {
                     $pdo->commit();
                 }
@@ -77,6 +104,30 @@ final class Migrator
     {
         $parts = preg_split('/;\s*(?:\r?\n|$)/', trim($sql)) ?: [];
         return array_values(array_filter(array_map('trim', $parts), static fn(string $statement): bool => $statement !== ''));
+    }
+
+
+    /**
+     * MySQL/MariaDB DDL auto-commits on shared hosts. If a previous request died
+     * after a DDL statement but before schema_migrations was recorded, repeating
+     * that exact migration can legitimately hit an "already exists" error.
+     */
+    private static function isRetrySafeDuplicateDdl(PDOException $e, string $statement): bool
+    {
+        $info = $e->errorInfo;
+        $code = is_array($info) && isset($info[1]) && is_numeric($info[1]) ? (int)$info[1] : null;
+        $normalized = strtoupper(ltrim($statement));
+        if ($code === 1060 && str_starts_with($normalized, 'ALTER TABLE') && str_contains($normalized, 'ADD COLUMN')) return true;
+        if ($code === 1061 && str_starts_with($normalized, 'CREATE INDEX')) return true;
+        if ($code === 1050 && str_starts_with($normalized, 'CREATE TABLE')) return true;
+        return false;
+    }
+
+    private static function compactDbMessage(PDOException $e): string
+    {
+        $message = preg_replace('/\s+/', ' ', $e->getMessage()) ?: 'database error';
+        if (strlen($message) > 220) $message = substr($message, 0, 217) . '...';
+        return $message;
     }
 
 }
