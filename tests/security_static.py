@@ -12,6 +12,7 @@ def controller_bundle(prefix: str) -> str:
     files = [controllers / f'{prefix}Controller.php', *sorted(controllers.glob(f'{prefix}*Trait.php'))]
     return '\n'.join(text[p] for p in files if p in text)
 
+# Every literal POST form rendered by PHP must carry a CSRF field.
 missing = []
 for p, src in text.items():
     for m in re.finditer(r'<form\b[^>]*method=["\']post["\'][^>]*>(.*?)</form>', src, re.I | re.S):
@@ -38,6 +39,7 @@ assert "function notify_user" in helpers and "function notify_course_students" i
 assert "require_feature('search')" in system and "require_feature('backup_restore')" in system, 'search/backup module gates missing'
 assert "feature_enabled('announcements')" in system and "Announcements module is disabled" in system, 'announcement module gate missing'
 
+# Optional module entrypoints must enforce their feature gates in their controller/trait bundle.
 required_gates = {
     'Attendance': "require_feature('attendance')",
     'Project': "require_feature('projects')",
@@ -50,6 +52,7 @@ for prefix, needle in required_gates.items():
 
 print(f"PASS: CSRF on literal POST forms ({len(php_files)} PHP files scanned), privilege/MFA guards, module gates, timetable/report/announcement scoping, notification wiring.")
 
+# Dashboard privacy / universal profile regression checks.
 dashboard = (ROOT / 'app/Controllers/DashboardController.php').read_text()
 index_php = (ROOT / 'index.php').read_text()
 app_js = (ROOT / 'assets/js/app.js').read_text()
@@ -57,6 +60,7 @@ assert 'WHERE actor_user_id=?' in dashboard, 'non-admin dashboard activity must 
 assert "'profile' => ProfileController::show()" in index_php, 'profile route missing'
 assert "r=profile" in app_js and "My profile" in app_js, 'profile navigation missing'
 
+# Invite onboarding security and lifecycle checks.
 invite_service = (ROOT / 'app/Services/InviteService.php').read_text()
 invite_controller = (ROOT / 'app/Controllers/RegistrationInviteController.php').read_text()
 admin_users = (ROOT / 'app/Controllers/AdminUsersTrait.php').read_text()
@@ -69,7 +73,19 @@ assert "create_student_invite" in admin_users and "create_role_invite" in admin_
 assert "role === 'super_admin'" in invite_service, 'invite service must block Super Admin creation'
 assert 'FOR UPDATE' in invite_service and 'BEGIN IMMEDIATE' in invite_service, 'invite seat consumption needs DB locking on MySQL/SQLite'
 
+# Application chrome must not rely on emoji glyphs for icons.
 emoji_ranges = [(0x1F300,0x1FAFF),(0x2600,0x26FF),(0x2700,0x27BF),(0x1F1E6,0x1F1FF)]
 for path in [*ROOT.rglob('*.php'), *ROOT.rglob('*.js'), *ROOT.rglob('*.css')]:
     src = path.read_text(encoding='utf-8')
     assert not any(any(start <= ord(ch) <= end for start,end in emoji_ranges) for ch in src), f'emoji glyph found in application UI source: {path.relative_to(ROOT)}'
+
+
+# Student onboarding context and Doubts/Q&A access checks.
+doubt_controller = (ROOT / 'app/Controllers/DoubtController.php').read_text()
+assert 'InviteService::createStudent' in admin_users, 'student onboarding must collect academic context and courses'
+assert 'registration_invite_contexts' in invite_service and 'registration_invite_courses' in invite_service, 'student invite context storage missing'
+assert 'batch_members' in invite_service and 'enrollments' in invite_service, 'student invite registration must auto-assign batch and courses'
+assert "'doubts' => DoubtController::index()" in index_php, 'doubts route missing'
+assert 'd.student_id=?' in doubt_controller, 'student doubt list must be scoped to the signed-in student'
+assert 'teacher_id=?' in doubt_controller, 'teacher doubt course scope missing'
+assert 'public_id' in doubt_controller and '100000' in doubt_controller and '99999999' in doubt_controller, 'doubt public IDs must remain 6-8 digits'

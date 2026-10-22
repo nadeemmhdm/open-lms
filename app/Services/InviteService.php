@@ -18,39 +18,75 @@ final class InviteService
         $role = trim($role);
         $maxUses = max(1, min(self::MAX_BULK_USES, $maxUses));
         $expiresHours = max(1, min(self::MAX_EXPIRY_HOURS, $expiresHours));
-
-        if ($creatorId < 1 || $role === '' || $role === 'super_admin') {
-            throw new \InvalidArgumentException('Invalid registration-link request.');
+        self::validateRole($pdo, $role, $creatorId);
+        self::archiveExpired($pdo);
+        self::beginWrite($pdo);
+        try {
+            $created = self::insertInvite($pdo, $role, $maxUses, $expiresHours, $creatorId);
+            self::commit($pdo);
+            return $created;
+        } catch (\Throwable $e) {
+            self::rollback($pdo);
+            throw $e;
         }
-        $roleCheck = $pdo->prepare('SELECT label FROM roles WHERE name=? LIMIT 1');
-        $roleCheck->execute([$role]);
-        $roleLabel = $roleCheck->fetchColumn();
-        if ($roleLabel === false) throw new \InvalidArgumentException('Choose a valid account role.');
+    }
+
+    public static function createStudent(int $maxUses, int $expiresHours, int $creatorId, int $academicYearId, int $batchId, array $courseIds): array
+    {
+        $pdo = Database::connection();
+        $maxUses = max(1, min(self::MAX_BULK_USES, $maxUses));
+        $expiresHours = max(1, min(self::MAX_EXPIRY_HOURS, $expiresHours));
+        $courseIds = array_values(array_unique(array_filter(array_map('intval', $courseIds), fn($id) => $id > 0)));
+        if ($creatorId < 1 || $academicYearId < 1 || $batchId < 1) throw new \InvalidArgumentException('Choose a valid academic year and batch.');
+        if (!$courseIds) throw new \InvalidArgumentException('Select at least one course for student enrollment.');
+        self::validateRole($pdo, 'student', $creatorId);
+
+        $batch = $pdo->prepare('SELECT b.id,b.name,ay.id academic_year_id,ay.name academic_year_name FROM batches b JOIN academic_years ay ON ay.id=b.academic_year_id WHERE b.id=? AND ay.id=? LIMIT 1');
+        $batch->execute([$batchId,$academicYearId]);
+        $batchRow = $batch->fetch();
+        if (!$batchRow) throw new \InvalidArgumentException('The selected batch does not belong to the selected academic year.');
+
+        $placeholders = implode(',', array_fill(0, count($courseIds), '?'));
+        $courseCheck = $pdo->prepare("SELECT id,title FROM courses WHERE status='published' AND id IN ({$placeholders}) ORDER BY title");
+        $courseCheck->execute($courseIds);
+        $courseRows = $courseCheck->fetchAll();
+        if (count($courseRows) !== count($courseIds)) throw new \InvalidArgumentException('One or more selected courses are unavailable.');
 
         self::archiveExpired($pdo);
-        $publicId = self::generatePublicId($pdo);
-        $secret = bin2hex(random_bytes(24));
-        $now = gmdate('Y-m-d H:i:s');
-        $expiresAt = gmdate('Y-m-d H:i:s', time() + ($expiresHours * 3600));
-        $pdo->prepare('INSERT INTO registration_invites (public_id,token_hash,role_name,max_uses,used_count,expires_at,created_by,created_at) VALUES (?,?,?,?,0,?,?,?)')
-            ->execute([$publicId, hash('sha256', $secret), $role, $maxUses, $expiresAt, $creatorId, $now]);
-
-        return [
-            'public_id' => $publicId,
-            'secret' => $secret,
-            'role' => $role,
-            'role_label' => (string)$roleLabel,
-            'max_uses' => $maxUses,
-            'expires_at' => $expiresAt,
-            'url' => absolute_app_url('?' . http_build_query(['r'=>'join','id'=>(string)$publicId,'key'=>$secret])),
-        ];
+        self::beginWrite($pdo);
+        try {
+            $created = self::insertInvite($pdo, 'student', $maxUses, $expiresHours, $creatorId);
+            $publicId = (int)$created['public_id'];
+            $now = gmdate('Y-m-d H:i:s');
+            $pdo->prepare('INSERT INTO registration_invite_contexts (public_id,academic_year_id,batch_id,created_at) VALUES (?,?,?,?)')
+                ->execute([$publicId,$academicYearId,$batchId,$now]);
+            foreach ($courseIds as $courseId) {
+                $pdo->prepare('INSERT INTO registration_invite_courses (public_id,course_id) VALUES (?,?)')->execute([$publicId,$courseId]);
+                $exists = $pdo->prepare('SELECT COUNT(*) FROM course_batches WHERE course_id=? AND batch_id=?');
+                $exists->execute([$courseId,$batchId]);
+                if (!(int)$exists->fetchColumn()) {
+                    $pdo->prepare('INSERT INTO course_batches (course_id,batch_id,assigned_at) VALUES (?,?,?)')->execute([$courseId,$batchId,$now]);
+                }
+            }
+            self::commit($pdo);
+            $created['academic_year_id'] = $academicYearId;
+            $created['academic_year_name'] = (string)$batchRow['academic_year_name'];
+            $created['batch_id'] = $batchId;
+            $created['batch_name'] = (string)$batchRow['name'];
+            $created['course_count'] = count($courseRows);
+            $created['courses'] = $courseRows;
+            return $created;
+        } catch (\Throwable $e) {
+            self::rollback($pdo);
+            throw $e;
+        }
     }
 
     public static function activeList(): array
     {
         $pdo = Database::connection();
         self::archiveExpired($pdo);
-        return $pdo->query("SELECT i.public_id,i.role_name,r.label role_label,i.max_uses,i.used_count,i.expires_at,i.created_at,u.name creator_name FROM registration_invites i JOIN roles r ON r.name=i.role_name JOIN users u ON u.id=i.created_by ORDER BY i.id DESC")->fetchAll();
+        return $pdo->query("SELECT i.public_id,i.role_name,r.label role_label,i.max_uses,i.used_count,i.expires_at,i.created_at,u.name creator_name,ay.name academic_year_name,b.name batch_name,(SELECT COUNT(*) FROM registration_invite_courses ric WHERE ric.public_id=i.public_id) course_count FROM registration_invites i JOIN roles r ON r.name=i.role_name JOIN users u ON u.id=i.created_by LEFT JOIN registration_invite_contexts ricx ON ricx.public_id=i.public_id LEFT JOIN academic_years ay ON ay.id=ricx.academic_year_id LEFT JOIN batches b ON b.id=ricx.batch_id ORDER BY i.id DESC")->fetchAll();
     }
 
     public static function revoke(int $publicId, int $actorId): bool
@@ -82,7 +118,7 @@ final class InviteService
         $pdo = Database::connection();
         self::archiveExpired($pdo);
         $tokenHash = hash('sha256', $secret);
-        $stmt = $pdo->prepare('SELECT i.*,r.label role_label FROM registration_invites i JOIN roles r ON r.name=i.role_name WHERE i.public_id=? LIMIT 1');
+        $stmt = $pdo->prepare("SELECT i.*,r.label role_label,ay.name academic_year_name,b.name batch_name,(SELECT COUNT(*) FROM registration_invite_courses ric WHERE ric.public_id=i.public_id) course_count FROM registration_invites i JOIN roles r ON r.name=i.role_name LEFT JOIN registration_invite_contexts ricx ON ricx.public_id=i.public_id LEFT JOIN academic_years ay ON ay.id=ricx.academic_year_id LEFT JOIN batches b ON b.id=ricx.batch_id WHERE i.public_id=? LIMIT 1");
         $stmt->execute([$publicId]);
         $invite = $stmt->fetch();
         if ($invite) {
@@ -145,6 +181,8 @@ final class InviteService
             $userId = (int)$pdo->lastInsertId();
             $pdo->prepare('INSERT INTO user_roles (user_id,role_id) VALUES (?,?)')->execute([$userId,$roleId]);
 
+            if ((string)$invite['role_name'] === 'student') self::applyStudentOnboarding($pdo, $publicId, $userId, $now);
+
             $newUsed = (int)$invite['used_count'] + 1;
             $invite['used_count'] = $newUsed;
             $invite['last_used_at'] = $now;
@@ -173,7 +211,7 @@ final class InviteService
         $rows->execute([gmdate('Y-m-d H:i:s')]);
         foreach ($rows->fetchAll() as $invite) {
             try {
-                $pdo->beginTransaction();
+                if (!$pdo->inTransaction()) $pdo->beginTransaction();
                 $locked = self::lockedInvite($pdo, (int)$invite['public_id']);
                 if ($locked && strtotime((string)$locked['expires_at'] . ' UTC') <= time()) self::archiveAndDelete($pdo, $locked, 'expired');
                 if ($pdo->inTransaction()) $pdo->commit();
@@ -186,6 +224,63 @@ final class InviteService
     public static function validPublicId(int $publicId): bool
     {
         return $publicId >= self::MIN_PUBLIC_ID && $publicId <= self::MAX_PUBLIC_ID;
+    }
+
+    private static function validateRole(PDO $pdo, string $role, int $creatorId): void
+    {
+        if ($creatorId < 1 || $role === '' || $role === 'super_admin') throw new \InvalidArgumentException('Invalid registration-link request.');
+        $roleCheck = $pdo->prepare('SELECT label FROM roles WHERE name=? LIMIT 1');
+        $roleCheck->execute([$role]);
+        if ($roleCheck->fetchColumn() === false) throw new \InvalidArgumentException('Choose a valid account role.');
+    }
+
+    private static function insertInvite(PDO $pdo, string $role, int $maxUses, int $expiresHours, int $creatorId): array
+    {
+        $roleCheck = $pdo->prepare('SELECT label FROM roles WHERE name=? LIMIT 1');
+        $roleCheck->execute([$role]);
+        $roleLabel = $roleCheck->fetchColumn();
+        if ($roleLabel === false) throw new \InvalidArgumentException('Choose a valid account role.');
+        $publicId = self::generatePublicId($pdo);
+        $secret = bin2hex(random_bytes(24));
+        $now = gmdate('Y-m-d H:i:s');
+        $expiresAt = gmdate('Y-m-d H:i:s', time() + ($expiresHours * 3600));
+        $pdo->prepare('INSERT INTO registration_invites (public_id,token_hash,role_name,max_uses,used_count,expires_at,created_by,created_at) VALUES (?,?,?,?,0,?,?,?)')
+            ->execute([$publicId,hash('sha256', $secret),$role,$maxUses,$expiresAt,$creatorId,$now]);
+        return [
+            'public_id'=>$publicId,
+            'secret'=>$secret,
+            'role'=>$role,
+            'role_label'=>(string)$roleLabel,
+            'max_uses'=>$maxUses,
+            'expires_at'=>$expiresAt,
+            'url'=>absolute_app_url('?' . http_build_query(['r'=>'join','id'=>(string)$publicId,'key'=>$secret])),
+        ];
+    }
+
+    private static function applyStudentOnboarding(PDO $pdo, int $publicId, int $userId, string $now): void
+    {
+        $ctx = $pdo->prepare('SELECT academic_year_id,batch_id FROM registration_invite_contexts WHERE public_id=? LIMIT 1');
+        $ctx->execute([$publicId]);
+        $context = $ctx->fetch();
+        if (!$context) return;
+        $batchId = (int)$context['batch_id'];
+        $member = $pdo->prepare('SELECT COUNT(*) FROM batch_members WHERE batch_id=? AND user_id=?');
+        $member->execute([$batchId,$userId]);
+        if (!(int)$member->fetchColumn()) $pdo->prepare('INSERT INTO batch_members (batch_id,user_id,assigned_at) VALUES (?,?,?)')->execute([$batchId,$userId,$now]);
+
+        $courses = $pdo->prepare('SELECT course_id FROM registration_invite_courses WHERE public_id=? ORDER BY course_id');
+        $courses->execute([$publicId]);
+        foreach ($courses->fetchAll(PDO::FETCH_COLUMN) as $courseIdRaw) {
+            $courseId = (int)$courseIdRaw;
+            $enrolled = $pdo->prepare('SELECT id,status FROM enrollments WHERE user_id=? AND course_id=? LIMIT 1');
+            $enrolled->execute([$userId,$courseId]);
+            $row = $enrolled->fetch();
+            if (!$row) {
+                $pdo->prepare('INSERT INTO enrollments (user_id,course_id,batch_id,enrolled_at,status) VALUES (?,?,?,?,\'active\')')->execute([$userId,$courseId,$batchId,$now]);
+            } elseif ((string)$row['status'] === 'withdrawn') {
+                $pdo->prepare("UPDATE enrollments SET batch_id=?,enrolled_at=?,status='active' WHERE id=?")->execute([$batchId,$now,(int)$row['id']]);
+            }
+        }
     }
 
     private static function generatePublicId(PDO $pdo): int

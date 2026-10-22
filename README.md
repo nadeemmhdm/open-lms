@@ -13,7 +13,7 @@ Phases 1–6 are implemented in this repository.
 - Secure sessions, password hashing, CSRF, prepared statements, login throttling and audit logs.
 - Server-side roles/permissions, protected Super Admin elevation/removal rules and account suspension controls.
 - One-time 30-minute password-reset links for trusted manual delivery.
-- Admin-generated self-service onboarding links: seat-limited bulk Student links and one-user role setup links with 6–8 digit public IDs, hashed secrets, automatic expiry/consumption and immediate sign-in after account creation.
+- Admin-generated self-service onboarding links: seat-limited bulk Student links and one-user role setup links with 6–8 digit public IDs, hashed secrets, automatic expiry/consumption and immediate sign-in after account creation. Bulk Student links can carry an Academic Year, Batch and selected Courses so registration automatically adds batch membership and enrollments.
 - RFC 6238 TOTP MFA with locally generated QR enrollment, encrypted secrets, replay prevention, one-time hashed recovery codes, challenge throttling, mandatory-role policy, user disable/re-enroll, and Super-Admin-authorized MFA reset.
 - Responsive light/dark UI and safe diagnostics.
 
@@ -26,6 +26,8 @@ Phases 1–6 are implemented in this repository.
 - Private learning-material uploads/downloads with size, extension, server MIME and signature validation.
 - PDF, DOC/DOCX, PPT/PPTX, JPEG, PNG, WebP, MP4 and ZIP support; executable uploads rejected.
 - External links and restricted YouTube/Vimeo embedding.
+
+- Student/teacher Doubts & Q&A: students ask from enrolled courses, teachers reply to questions from courses they teach, and teaching staff can mark questions resolved.
 
 ### Phase 3 — attendance, question bank, quizzes and gradebook
 - Daily/period, batch/course attendance with Present/Absent/Late/Excused states.
@@ -58,7 +60,7 @@ Phases 1–6 are implemented in this repository.
 - Optional fee invoice/payment-recording module (not a payment gateway).
 - Authorization-aware search with a server-side module switch.
 - Configurable encrypted application backup/restore including referenced private upload bytes.
-- Versioned migrations through `008_registration_invites` plus security/regression tests.
+- Versioned migrations through `009_onboarding_doubts` plus security/regression tests.
 - Server-side module switches for optional announcements, search, backup/restore, certificates, timetable/live classes, parent portal and fee management.
 
 ## Runtime requirements
@@ -124,6 +126,7 @@ Both adapters use ordered versioned migrations:
 - `006_phase6_*` — notifications/certificates/timetable/parent/fees/password-reset/backups/completions
 - `007_installer_seed_repair_*` — safe recovery for interrupted first-run seeds
 - `008_registration_invites_*` — secure self-service account onboarding links and invite history states
+- `009_onboarding_doubts_*` — batch/course-aware Student onboarding plus Doubts & Q&A threads
 
 `schema_migrations` prevents intentional reapplication. Existing installations run the migration checker at startup and only missing versions are applied. Back up before deploying a new schema version.
 

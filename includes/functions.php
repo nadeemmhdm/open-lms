@@ -51,11 +51,12 @@ function render_page(string $title, string $content, bool $withShell = true): vo
       <a class="brand" href="<?= e(app_url('?r=dashboard')) ?>"><span class="brand-mark">OL</span><strong><?= e($appName) ?></strong></a>
       <nav>
         <?= nav_link('dashboard','Dashboard') ?>
-        <?= nav_link('subjects','Learning') ?>
+        <?= nav_link('subjects','Courses') ?>
+        <?php if(in_array('student', $user['roles'] ?? [], true) || \OpenLMS\Core\Auth::can('courses.manage') || \OpenLMS\Core\Auth::isPrivileged()): ?><?= nav_link('doubts','Doubts & Q&A') ?><?php endif; ?>
         <?php if(feature_enabled('attendance')): ?><?= nav_link('attendance','Attendance') ?><?php endif; ?>
-        <?php if(feature_enabled('question_bank') && \OpenLMS\Core\Auth::can('questions.manage')): ?><?= nav_link('questions','Question bank') ?><?php endif; ?>
-        <?php if(feature_enabled('quizzes') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('quizzes','Quiz manager') ?><?php endif; ?>
-        <?php if(feature_enabled('exams') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('exams','Exam manager') ?><?php endif; ?>
+        <?php if(feature_enabled('question_bank') && \OpenLMS\Core\Auth::can('questions.manage')): ?><?= nav_link('questions','Questions') ?><?php endif; ?>
+        <?php if(feature_enabled('quizzes') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('quizzes','Quizzes') ?><?php endif; ?>
+        <?php if(feature_enabled('exams') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('exams','Exams') ?><?php endif; ?>
         <?php if(in_array('student', $user['roles'] ?? [], true) && (feature_enabled('quizzes') || feature_enabled('exams'))): ?><?= nav_link('assessments','Assessments') ?><?php endif; ?>
         <?php if(feature_enabled('projects')): ?><?= nav_link('projects','Projects') ?><?php endif; ?>
         <?php if(feature_enabled('gradebook')): ?><?= nav_link('gradebook','Gradebook') ?><?php endif; ?>
@@ -67,8 +68,8 @@ function render_page(string $title, string $content, bool $withShell = true): vo
         <?php if(feature_enabled('parent_portal') && in_array('parent',$user['roles'],true)): ?><?= nav_link('parent-portal','Parent portal') ?><?php endif; ?>
         <?php if(feature_enabled('search')): ?><?= nav_link('search','Search') ?><?php endif; ?>
         <?= nav_link('profile','My profile') ?>
-        <?= nav_link('mfa-setup','Security / MFA') ?>
-        <?php if(\OpenLMS\Core\Auth::can('academics.manage')): ?><?= nav_link('academics','Academic setup') ?><?php endif; ?>
+        <?= nav_link('mfa-setup','Security') ?>
+        <?php if(\OpenLMS\Core\Auth::can('academics.manage')): ?><?= nav_link('academics','Academics') ?><?php endif; ?>
         <?php if(\OpenLMS\Core\Auth::isPrivileged()): ?>
           <?= nav_link('users','Users') ?><?php if(\OpenLMS\Core\Auth::hasAnyRole(['super_admin'])): ?><?= nav_link('roles','Roles') ?><?php endif; ?><?= nav_link('features','Modules') ?><?= nav_link('diagnostics','Diagnostics') ?><?= nav_link('audit','Audit log') ?><?php if(feature_enabled('backup_restore')): ?><?= nav_link('backup','Backup') ?><?php endif; ?>
         <?php endif; ?>
