@@ -49,13 +49,13 @@ jobs:
           echo '36918fcebfa5b649f2ba6ecfcde76698320ed5c0f1a0178a47aa96e32d4e3a78  /tmp/openlms-final8.tar.xz' | sha256sum -c -
           tar -xJf /tmp/openlms-final8.tar.xz -C target
           cd target
-          test "$(git hash-object README.md)" = 'ca047ce63461908f700890042065e13ad75ec7fd'
+          test "$(git hash-object README.md)" = 'ca047dc548539ea2793a4d1eb6b557a8f6aceb32'
           test "$(git hash-object app/Controllers/LessonLearningTrait.php)" = '9ed1d93d4984d93f25c8409fa075d45bc62a859b'
-          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-1.js)" = '54b5c41261566069f0e4d6b819284217bdd5652c'
-          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-2.js)" = '31817bcb95294996d8b0b4a049c46d9fc140a0e7'
-          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-3.js)" = 'e902fe9a08bec130cc77f9ae35d24bda11774f59'
-          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-4.js)" = '1a8fa492024ee34754331a3d5b29ef79ae0c6938'
-          test "$(git hash-object assets/js/vendor/openlms-qrcode.js)" = '6cbf8397c9b1ccf266f0710928069d8280cb1c9e'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-1.js)" = 'f89e97dfd1970c88aa40ba78f57499e62b38f054'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-2.js)" = '3c134f5a4393dfa288653e0a9b018236a7e1600f'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-3.js)" = '55f66914b9c20624b51593571e23fe5fc6f4004d'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode-modules-4.js)" = '7ecfae7547c2b6b5f67e111acf2920130c214bd5'
+          test "$(git hash-object assets/js/vendor/openlms-qrcode.js)" = '57bbeaf768083b89f449e067b016a999a998501e'
           test "$(git hash-object tests/security_static.py)" = 'cbb21614fc6093146a0fece9e9e2e673c91b0484'
           git add -A
           cat > /tmp/expected-paths <<'EOF'
