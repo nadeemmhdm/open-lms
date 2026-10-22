@@ -11,6 +11,7 @@ use OpenLMS\Controllers\AuthController;
 use OpenLMS\Controllers\MfaController;
 use OpenLMS\Controllers\DashboardController;
 use OpenLMS\Controllers\DoubtController;
+use OpenLMS\Controllers\OnboardingController;
 use OpenLMS\Controllers\ProfileController;
 use OpenLMS\Controllers\RegistrationInviteController;
 use OpenLMS\Controllers\AdminController;
@@ -85,6 +86,7 @@ try {
         'dashboard' => DashboardController::show(),
         'profile' => ProfileController::show(),
         'doubts' => DoubtController::index(),
+        'onboarding' => OnboardingController::index(),
         'mfa-setup' => MfaController::setup(),
         'academics' => AcademicController::index(),
         'subjects' => LearningController::subjects(),

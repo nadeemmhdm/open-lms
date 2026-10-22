@@ -81,36 +81,6 @@
     });
   });
 
-  const onboardingYear = document.querySelector('[data-onboarding-year]');
-  const onboardingBatch = document.querySelector('[data-onboarding-batch]');
-  if (onboardingYear && onboardingBatch) {
-    const syncBatches = () => {
-      const year = onboardingYear.value;
-      let firstVisible = null;
-      Array.from(onboardingBatch.options).forEach((option, index) => {
-        if (index === 0) return;
-        const visible = !year || option.dataset.year === year;
-        option.hidden = !visible;
-        option.disabled = !visible;
-        if (visible && !firstVisible) firstVisible = option;
-      });
-      const selected = onboardingBatch.selectedOptions[0];
-      if (!selected || selected.disabled || selected.hidden) onboardingBatch.value = firstVisible?.value || '';
-    };
-    onboardingYear.addEventListener('change', syncBatches);
-    syncBatches();
-  }
-
-  const selectAllCourses = document.querySelector('[data-course-select-all]');
-  if (selectAllCourses) {
-    const courseChecks = Array.from(document.querySelectorAll('input[name="course_ids[]"]'));
-    selectAllCourses.addEventListener('change', () => courseChecks.forEach((box) => { box.checked = selectAllCourses.checked; }));
-    courseChecks.forEach((box) => box.addEventListener('change', () => {
-      selectAllCourses.checked = courseChecks.length > 0 && courseChecks.every((item) => item.checked);
-      selectAllCourses.indeterminate = courseChecks.some((item) => item.checked) && !selectAllCourses.checked;
-    }));
-  }
-
   const driver = document.getElementById('db-driver');
   const mysql = document.getElementById('mysql-fields');
   if (driver && mysql) {

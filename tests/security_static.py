@@ -82,10 +82,12 @@ for path in [*ROOT.rglob('*.php'), *ROOT.rglob('*.js'), *ROOT.rglob('*.css')]:
 
 # Student onboarding context and Doubts/Q&A access checks.
 doubt_controller = (ROOT / 'app/Controllers/DoubtController.php').read_text()
-assert 'InviteService::createStudent' in admin_users, 'student onboarding must collect academic context and courses'
+onboarding = (ROOT / 'app/Controllers/OnboardingController.php').read_text()
+assert 'InviteService::createStudent' in onboarding, 'student onboarding must collect academic context and courses'
 assert 'registration_invite_contexts' in invite_service and 'registration_invite_courses' in invite_service, 'student invite context storage missing'
 assert 'batch_members' in invite_service and 'enrollments' in invite_service, 'student invite registration must auto-assign batch and courses'
 assert "'doubts' => DoubtController::index()" in index_php, 'doubts route missing'
+assert "'onboarding' => OnboardingController::index()" in index_php, 'onboarding route missing'
 assert 'd.student_id=?' in doubt_controller, 'student doubt list must be scoped to the signed-in student'
 assert 'teacher_id=?' in doubt_controller, 'teacher doubt course scope missing'
 assert 'public_id' in doubt_controller and '100000' in doubt_controller and '99999999' in doubt_controller, 'doubt public IDs must remain 6-8 digits'

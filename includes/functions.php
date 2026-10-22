@@ -71,7 +71,7 @@ function render_page(string $title, string $content, bool $withShell = true): vo
         <?= nav_link('mfa-setup','Security') ?>
         <?php if(\OpenLMS\Core\Auth::can('academics.manage')): ?><?= nav_link('academics','Academics') ?><?php endif; ?>
         <?php if(\OpenLMS\Core\Auth::isPrivileged()): ?>
-          <?= nav_link('users','Users') ?><?php if(\OpenLMS\Core\Auth::hasAnyRole(['super_admin'])): ?><?= nav_link('roles','Roles') ?><?php endif; ?><?= nav_link('features','Modules') ?><?= nav_link('diagnostics','Diagnostics') ?><?= nav_link('audit','Audit log') ?><?php if(feature_enabled('backup_restore')): ?><?= nav_link('backup','Backup') ?><?php endif; ?>
+          <?= nav_link('onboarding','Onboarding') ?><?= nav_link('users','Users') ?><?php if(\OpenLMS\Core\Auth::hasAnyRole(['super_admin'])): ?><?= nav_link('roles','Roles') ?><?php endif; ?><?= nav_link('features','Modules') ?><?= nav_link('diagnostics','Diagnostics') ?><?= nav_link('audit','Audit log') ?><?php if(feature_enabled('backup_restore')): ?><?= nav_link('backup','Backup') ?><?php endif; ?>
         <?php endif; ?>
       </nav>
       <div class="sidebar-bottom"><button class="theme-btn" type="button" data-theme-toggle>Theme</button><form method="post" action="<?= e(app_url('?r=logout')) ?>"><input type="hidden" name="_csrf" value="<?= e(\OpenLMS\Core\Csrf::token()) ?>"><button class="nav-link nav-button" type="submit">Sign out</button></form></div>

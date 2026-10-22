@@ -74,7 +74,7 @@ Recommended: PHP 8.1+ with PDO, sessions, OpenSSL, mbstring and Fileinfo. For In
 3. Open the website. If `config/config.php` and `storage/install.lock` do not exist, Open LMS displays its first-run installer.
 4. Select **MySQL / MariaDB (InfinityFree)** and enter the exact database host/name/user/password from the hosting panel. Do not assume `localhost`.
 5. Enter the institution name and first Super Admin credentials (minimum 12-character password).
-6. The installer applies all pending migrations `001`–`008`, seeds roles/permissions/features, creates the first Super Admin, generates a random application encryption key, writes `config/config.php`, and creates `storage/install.lock`.
+6. The installer applies all pending migrations `001`–`009`, seeds roles/permissions/features, creates the first Super Admin, generates a random application encryption key, writes `config/config.php`, and creates `storage/install.lock`.
 7. Sign in. The Super Admin is required to enroll authenticator MFA before continuing.
 
 Expected upload layout:
@@ -140,7 +140,7 @@ Then open `http://127.0.0.1:8080/`. A supported PDO driver is required to comple
 
 ## Verification
 
-Local automated checks include PHP syntax lint, JavaScript syntax, migrations `001`–`008` in a temporary SQLite database, cross-module integrity workflows, RFC 6238 vectors, local QR generation, CSRF/security wiring and first-run installer HTTP rendering. See `TESTING.md` for exact commands and the required InfinityFree/MySQL acceptance checklist.
+Local automated checks include PHP syntax lint, JavaScript syntax, migrations `001`–`009` in a temporary SQLite database, cross-module integrity workflows, RFC 6238 vectors, local QR generation, CSRF/security wiring and first-run installer HTTP rendering. See `TESTING.md` for exact commands and the required InfinityFree/MySQL acceptance checklist.
 
 The current build environment does **not** expose a PHP PDO database driver, so a live PHP/MySQL migration and end-to-end deployment cannot truthfully be marked as tested here. Complete the target-host checklist before treating an installation as production-ready.
 
