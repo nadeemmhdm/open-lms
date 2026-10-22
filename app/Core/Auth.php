@@ -70,8 +70,7 @@ final class Auth
     {
         self::requireAuth();
         if (!self::can($permission)) {
-            http_response_code(403);
-            render_page('Access denied', '<div class="card"><h2>403</h2><p>You do not have permission to access this page.</p></div>');
+            render_status_page(403, 'Access denied', 'You do not have permission to access this page.', 'Back to dashboard', app_url('?r=dashboard'));
             exit;
         }
     }
@@ -193,8 +192,7 @@ final class Auth
     {
         self::requireAuth();
         if (!self::isPrivileged()) {
-            http_response_code(403);
-            render_page('Access denied', '<div class="card"><h2>403</h2><p>You do not have permission to access this page.</p></div>');
+            render_status_page(403, 'Access denied', 'You do not have permission to access this page.', 'Back to dashboard', app_url('?r=dashboard'));
             exit;
         }
     }
