@@ -64,6 +64,23 @@
     userChip.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProfile(); } });
   }
 
+  document.querySelectorAll('[data-copy-button]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const field = button.closest('.copy-field')?.querySelector('[data-copy-source]');
+      if (!field) return;
+      const value = field.value || field.textContent || '';
+      try {
+        await navigator.clipboard.writeText(value);
+        const previous = button.textContent;
+        button.textContent = 'Copied';
+        setTimeout(() => { button.textContent = previous; }, 1600);
+      } catch (_) {
+        field.focus();
+        field.select?.();
+      }
+    });
+  });
+
   const driver = document.getElementById('db-driver');
   const mysql = document.getElementById('mysql-fields');
   if (driver && mysql) {
