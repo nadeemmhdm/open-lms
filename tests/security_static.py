@@ -118,6 +118,7 @@ notifications_trait = (ROOT / 'app/Controllers/SystemNotificationsTrait.php').re
 installer = (ROOT / 'app/Services/Installer.php').read_text()
 
 assert 'NORMAL_LIFETIME = 43200' in auth_core and 'REMEMBER_LIFETIME = 86400' in auth_core, '12-hour / 1-day session policy missing'
+assert 'login_cooldown_minutes' in auth_core and 'login_ip_max_attempts' in auth_core and 'failed_count' in auth_core, 'login cooldown/network throttle missing'
 assert 'remember_me' in authc and 'Remember me for 1 day' in authc, 'remember-me login UI/wiring missing'
 assert 'auth_sessions' in auth_core and "hash('sha256',$token)" in auth_core.replace(' ', ''), 'hashed server-side auth session token missing'
 assert 'Auth::revokeAllSessions($uid)' in admin_users, 'suspension must revoke active sessions'
@@ -158,8 +159,8 @@ assert "'support'" in installer, 'fresh installer must seed support module state
 backup_service = (ROOT / 'app/Services/BackupService.php').read_text()
 course_learning = (ROOT / 'app/Controllers/CourseLearningTrait.php').read_text()
 assert "if ($route === 'forgot-password')" in index_php and 'forgotPassword' in authc, 'public forgot-password route missing'
-assert 'password_reset_requests' in authc and "time() + 1800" in authc, '30-minute reset request lifecycle missing'
-assert 'SELECT COUNT(*) FROM password_reset_requests WHERE ip_address=?' in authc and 'MailService::sendPasswordReset' in authc, 'password reset throttling/mail wiring missing'
+assert 'password_reset_requests' in authc and 'nowTs + 1800' in authc, '30-minute reset request lifecycle missing'
+assert 'mail_sent=1' in authc and 'nowTs - 300' in authc and 'nowTs - 86400' in authc and 'MailService::sendPasswordReset' in authc, 'password reset cooldown/send ceilings missing'
 assert 'sendPasswordReset' in mail_service and 'expires in 30 minutes' in mail_service, 'password reset email missing'
 assert 'Auth::revokeAllSessions' in authc, 'password reset must revoke existing sessions'
 assert 'function app_name' in helpers and "SettingsService::get('institution_name'" in helpers, 'database-backed LMS branding helper missing'
@@ -176,10 +177,18 @@ assert 'gzencode' in backup_service and "aes-256-gcm" in backup_service and 'pat
 assert "'backup-download' => SystemController::backupDownload()" in index_php, 'secure backup download route missing'
 
 lesson_learning = (ROOT / 'app/Controllers/LessonLearningTrait.php').read_text()
-release_doc = (ROOT / 'RELEASE.md').read_text()
+readme = (ROOT / 'README.md').read_text()
 assert 'delete_lesson' in lesson_learning and 'Delete empty lesson' in lesson_learning, 'safe lesson delete control missing'
 assert 'lesson_progress' in lesson_learning and 'lesson_prerequisites' in lesson_learning, 'lesson deletion must guard dependent learning history'
-assert '# Open LMS Stable' in release_doc and '**Version:** v1.0.0' in release_doc and '**Description:**' in release_doc, 'minimal stable release metadata missing'
+assert 'content_format' in lesson_learning and "['rich','markdown']" in lesson_learning, 'rich/Markdown lesson mode missing'
+assert 'lesson_content_html' in helpers and 'markdown_to_safe_html' in helpers, 'safe Markdown renderer missing'
+assert 'data-content-editor' in lesson_learning and 'data-editor-link' in lesson_learning and 'data-markdown-editor' in lesson_learning, 'dynamic lesson editor controls missing'
+assert "'image'" in lesson_learning and "inline=1" in lesson_learning, 'lesson image/video inline media support missing'
+assert 'announcement_media' in notifications_trait and 'media_files[]' in notifications_trait and 'image_url' in notifications_trait and 'video_url' in notifications_trait, 'announcement upload/link media support missing'
+assert "'announcement-media' => SystemController::announcementMedia()" in index_php, 'protected announcement media route missing'
+assert "'announcement_media'" in backup_service and "str_starts_with($relative, 'announcements/')" in backup_service, 'announcement media must be covered by encrypted backups'
+assert not (ROOT / 'RELEASE.md').exists(), 'RELEASE.md should be consolidated into README'
+assert '# Open LMS' in readme and 'v1.0.0' in readme and 'MIT' in readme and 'Contributing' in readme, 'professional open-source README metadata missing'
 assert not (ROOT / 'CODE_OF_CONDUCT.md').exists() and not (ROOT / 'CONTRIBUTING.md').exists() and not (ROOT / 'TESTING.md').exists(), 'redundant markdown files should stay consolidated into README/SECURITY'
 assert not (ROOT / 'app/Helpers').exists() and not (ROOT / 'app/Models').exists(), 'empty source folders should not remain in stable package'
 

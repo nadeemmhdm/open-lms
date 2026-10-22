@@ -24,7 +24,7 @@ final class BackupService
         'attendance_sessions','attendance_records','attendance_corrections',
         'question_banks','questions','question_options','quizzes','quiz_questions','exam_attempts','attempt_questions','exam_answers','exam_events',
         'projects','project_groups','project_group_members','project_submissions','submission_files','project_submission_events','grades',
-        'feature_settings','app_settings','notifications','announcements','certificates','timetable_entries','live_classes','parent_student_links',
+        'feature_settings','app_settings','notifications','announcements','announcement_media','certificates','timetable_entries','live_classes','parent_student_links',
         'fee_invoices','fee_payments','payment_transactions','support_tickets','support_replies',
         'registration_invites','registration_invite_contexts','registration_invite_courses','registration_invite_history',
         'doubts','doubt_replies','course_completions','mfa_credentials','audit_logs'
@@ -257,7 +257,7 @@ final class BackupService
     private static function referencedUploads(PDO $pdo): array
     {
         $paths = [];
-        foreach (['learning_materials', 'submission_files'] as $table) {
+        foreach (['learning_materials', 'submission_files', 'announcement_media'] as $table) {
             if (!self::tableExists($pdo, $table)) continue;
             foreach ($pdo->query('SELECT stored_name FROM ' . self::quoteIdentifier($table))->fetchAll(PDO::FETCH_COLUMN) as $relative) {
                 $relative = (string) $relative;
@@ -299,7 +299,7 @@ final class BackupService
             && !str_contains($relative, '..')
             && !str_starts_with($relative, '/')
             && !str_contains($relative, '\\')
-            && (str_starts_with($relative, 'materials/') || str_starts_with($relative, 'projects/'))
+            && (str_starts_with($relative, 'materials/') || str_starts_with($relative, 'projects/') || str_starts_with($relative, 'announcements/'))
             && preg_match('#^[A-Za-z0-9/_-]+\.dat$#', $relative) === 1;
     }
 

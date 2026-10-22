@@ -114,14 +114,38 @@
     sync();
   }
 
-  document.querySelectorAll('[data-rich-editor]').forEach((editor) => {
-    const form = editor.closest('form');
-    const input = form?.querySelector('[data-rich-input]');
-    const sync = () => { if (input) input.value = editor.innerHTML; };
+  document.querySelectorAll('[data-content-editor]').forEach((wrap) => {
+    const form = wrap.closest('form');
+    const format = wrap.querySelector('[data-content-format]');
+    const richPanel = wrap.querySelector('[data-rich-panel]');
+    const markdownPanel = wrap.querySelector('[data-markdown-panel]');
+    const editor = wrap.querySelector('[data-rich-editor]');
+    const markdown = wrap.querySelector('[data-markdown-editor]');
+    const input = wrap.querySelector('[data-content-input]');
+    const toolbar = wrap.querySelector('[data-editor-toolbar]');
+    if (!format || !editor || !markdown || !input) return;
+
+    const sync = () => {
+      input.value = format.value === 'markdown' ? markdown.value : editor.innerHTML;
+    };
+    let lastFormat = format.value;
+    const refreshMode = (preserve = false) => {
+      const isMarkdown = format.value === 'markdown';
+      if (preserve && lastFormat !== format.value) {
+        if (isMarkdown && !markdown.value.trim()) markdown.value = editor.innerText || '';
+        if (!isMarkdown && !editor.innerHTML.trim() && markdown.value.trim()) editor.textContent = markdown.value;
+      }
+      richPanel.hidden = isMarkdown;
+      markdownPanel.hidden = !isMarkdown;
+      lastFormat = format.value;
+      sync();
+    };
+
     editor.addEventListener('input', sync);
+    markdown.addEventListener('input', sync);
+    format.addEventListener('change', () => refreshMode(true));
     form?.addEventListener('submit', sync);
 
-    const toolbar = editor.previousElementSibling;
     toolbar?.querySelectorAll('[data-editor-command]').forEach((button) => {
       button.addEventListener('click', () => {
         editor.focus();
@@ -136,6 +160,28 @@
         sync();
       });
     });
+    toolbar?.querySelectorAll('[data-editor-link]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const url = window.prompt('Paste an https:// or http:// link');
+        if (!url) return;
+        try {
+          const parsed = new URL(url);
+          if (!['http:', 'https:'].includes(parsed.protocol)) return;
+          editor.focus();
+          document.execCommand('createLink', false, parsed.toString());
+          sync();
+        } catch (_) {}
+      });
+    });
+    editor.addEventListener('keydown', (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (!['b','i','u'].includes(key)) return;
+      event.preventDefault();
+      document.execCommand(key === 'b' ? 'bold' : key === 'i' ? 'italic' : 'underline', false);
+      sync();
+    });
+    refreshMode();
   });
 })();
 

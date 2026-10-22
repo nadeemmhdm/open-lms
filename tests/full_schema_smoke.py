@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable SQLite smoke test for Open LMS migrations 001-011."""
+"""Portable SQLite smoke test for Open LMS migrations 001-012."""
 from pathlib import Path
 import os, sqlite3, tempfile
 
@@ -10,7 +10,7 @@ db = sqlite3.connect(path)
 db.execute('PRAGMA foreign_keys=ON')
 try:
     migrations = sorted(ROOT.glob('database/migrations/*_sqlite.sql'))
-    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006','007','008','009','010','011']
+    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006','007','008','009','010','011','012']
     for migration in migrations:
         db.executescript(migration.read_text(encoding='utf-8'))
     db.commit()
@@ -22,7 +22,7 @@ try:
         'question_banks','questions','quizzes','quiz_questions','grades',
         'exam_attempts','exam_answers','exam_events','attempt_questions',
         'projects','project_submissions','project_groups','project_group_members',
-        'submission_files','notifications','announcements','certificates',
+        'submission_files','notifications','announcements','announcement_media','certificates',
         'timetable_entries','live_classes','parent_student_links','fee_invoices',
         'password_reset_tokens','backup_history','mfa_credentials','feature_settings',
         'registration_invites','registration_invite_history','registration_invite_contexts','registration_invite_courses','doubts','doubt_replies',
@@ -92,11 +92,18 @@ try:
     db.execute("INSERT INTO password_reset_requests(email_hash,ip_address,mail_sent,requested_at) VALUES('abc','127.0.0.1',0,datetime('now'))")
     assert db.execute("SELECT COUNT(*) FROM password_reset_requests WHERE ip_address='127.0.0.1'").fetchone()[0] == 1
 
+
+    # Stable content/media additions introduced by 012.
+    lesson_cols = {r[1] for r in db.execute("PRAGMA table_info('lessons')")}
+    announcement_cols = {r[1] for r in db.execute("PRAGMA table_info('announcements')")}
+    assert 'content_format' in lesson_cols
+    assert {'image_url','video_url'} <= announcement_cols
+
     db.execute("INSERT INTO password_reset_tokens(user_id,token_hash,expires_at,created_at) VALUES(?, 'hash',datetime('now','+1 hour'),datetime('now'))", (uid,))
     db.execute("INSERT INTO backup_history(file_name,driver,size_bytes,created_by,created_at) VALUES('test.olmsbak','sqlite',1,?,datetime('now'))", (uid,))
     assert db.execute('PRAGMA foreign_key_check').fetchall() == []
-    assert len(tables) >= 71
-    print('PASS: migrations 001-011, required LMS tables, unique constraints and foreign-key integrity.')
+    assert len(tables) >= 72
+    print('PASS: migrations 001-012, required LMS tables, unique constraints and foreign-key integrity.')
 finally:
     db.close()
     try: os.unlink(path)

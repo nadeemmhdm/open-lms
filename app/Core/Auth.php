@@ -97,18 +97,55 @@ final class Auth
         $email = mb_strtolower(trim($email));
         $window = max(1, (int)Config::get('security.login_window_minutes', 15));
         $max = max(3, (int)Config::get('security.login_max_attempts', 5));
-        $cutoff = gmdate('Y-m-d H:i:s', time() - ($window * 60));
-        $stmt = $pdo->prepare('SELECT COUNT(*) FROM login_attempts WHERE email=? AND ip_address=? AND successful=0 AND attempted_at>=?');
-        $stmt->execute([$email,$ip,$cutoff]);
-        if ((int)$stmt->fetchColumn() >= $max) return [false,'Too many failed login attempts. Try again later.'];
+        $cooldown = max(1, (int)Config::get('security.login_cooldown_minutes', 15));
+        $ipWindow = max(1, (int)Config::get('security.login_ip_window_minutes', 15));
+        $ipMax = max($max, (int)Config::get('security.login_ip_max_attempts', 20));
+        $nowTs = time();
+        $now = gmdate('Y-m-d H:i:s', $nowTs);
+
+        // Keep the throttle table bounded without requiring a background job.
+        try { $pdo->prepare('DELETE FROM login_attempts WHERE attempted_at<?')->execute([gmdate('Y-m-d H:i:s', $nowTs - 172800)]); } catch (\Throwable) {}
+
+        $pairCutoff = gmdate('Y-m-d H:i:s', $nowTs - ($window * 60));
+        $stmt = $pdo->prepare('SELECT COUNT(*) failed_count, MAX(attempted_at) last_failed FROM login_attempts WHERE email=? AND ip_address=? AND successful=0 AND attempted_at>=?');
+        $stmt->execute([$email,$ip,$pairCutoff]);
+        $pair = $stmt->fetch() ?: ['failed_count'=>0,'last_failed'=>null];
+        if ((int)$pair['failed_count'] >= $max && !empty($pair['last_failed'])) {
+            $lockedUntil = strtotime((string)$pair['last_failed'] . ' UTC') + ($cooldown * 60);
+            if ($lockedUntil > $nowTs) {
+                $minutes = max(1, (int)ceil(($lockedUntil - $nowTs) / 60));
+                return [false, 'Too many failed sign-in attempts. Try again in ' . $minutes . ' minute' . ($minutes === 1 ? '' : 's') . '.'];
+            }
+        }
+
+        $ipCutoff = gmdate('Y-m-d H:i:s', $nowTs - ($ipWindow * 60));
+        $stmt = $pdo->prepare('SELECT COUNT(*) failed_count, MAX(attempted_at) last_failed FROM login_attempts WHERE ip_address=? AND successful=0 AND attempted_at>=?');
+        $stmt->execute([$ip,$ipCutoff]);
+        $ipState = $stmt->fetch() ?: ['failed_count'=>0,'last_failed'=>null];
+        if ((int)$ipState['failed_count'] >= $ipMax && !empty($ipState['last_failed'])) {
+            $lockedUntil = strtotime((string)$ipState['last_failed'] . ' UTC') + ($cooldown * 60);
+            if ($lockedUntil > $nowTs) {
+                $minutes = max(1, (int)ceil(($lockedUntil - $nowTs) / 60));
+                return [false, 'Too many failed sign-in attempts from this network. Try again in ' . $minutes . ' minute' . ($minutes === 1 ? '' : 's') . '.'];
+            }
+        }
 
         $stmt = $pdo->prepare('SELECT * FROM users WHERE email=? LIMIT 1');
         $stmt->execute([$email]);
         $user = $stmt->fetch();
         $passwordOk = $user && password_verify($password, (string)$user['password_hash']);
         $pdo->prepare('INSERT INTO login_attempts (email,ip_address,successful,attempted_at) VALUES (?,?,?,?)')
-            ->execute([$email,$ip,$passwordOk?1:0,gmdate('Y-m-d H:i:s')]);
-        if (!$passwordOk) return [false,'Invalid email or password.'];
+            ->execute([$email,$ip,$passwordOk?1:0,$now]);
+        if (!$passwordOk) {
+            $failures = (int)$pair['failed_count'] + 1;
+            if ($failures >= $max) {
+                return [false, 'Too many failed sign-in attempts. Sign-in is paused for ' . $cooldown . ' minutes.'];
+            }
+            return [false,'Invalid email or password.'];
+        }
+
+        // A successful password check clears failed attempts for this email/IP pair.
+        $pdo->prepare('DELETE FROM login_attempts WHERE email=? AND ip_address=? AND successful=0')->execute([$email,$ip]);
 
         if ($user['status'] === 'suspended') {
             self::revokeAllSessions((int)$user['id']);

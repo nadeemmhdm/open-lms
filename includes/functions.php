@@ -137,11 +137,100 @@ function render_status_page(int $status, string $title, string $message, ?string
 
 function sanitize_rich_text(string $html): string
 {
-    $allowed = '<p><br><strong><em><ul><ol><li><h2><h3><blockquote><code><pre>';
-    $clean = strip_tags($html, $allowed);
-    $clean = preg_replace('/<(p|strong|em|ul|ol|li|h2|h3|blockquote|code|pre)\b[^>]*>/i', '<$1>', $clean) ?? '';
-    $clean = preg_replace('/<br\b[^>]*>/i', '<br>', $clean) ?? '';
-    return trim($clean);
+    $html = preg_replace('#<(script|style|iframe|object|embed|svg|math)\b[^>]*>.*?</\1>#is', '', $html) ?? '';
+    $html = strip_tags($html, '<p><br><strong><b><em><i><u><ul><ol><li><h2><h3><blockquote><code><pre><a><hr>');
+    $html = preg_replace_callback('/<a\b[^>]*>/i', static function(array $m): string {
+        $tag = $m[0];
+        if (!preg_match('/\bhref\s*=\s*(["\'])(.*?)\1/i', $tag, $hrefMatch)) return '<a>';
+        $url = html_entity_decode((string)$hrefMatch[2], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $safe = safe_external_url($url);
+        if (!$safe) return '<a>';
+        return '<a href="' . e($safe) . '" target="_blank" rel="noopener noreferrer">';
+    }, $html) ?? '';
+    $html = preg_replace('/<(p|strong|b|em|i|u|ul|ol|li|h2|h3|blockquote|code|pre|hr)\b[^>]*>/i', '<$1>', $html) ?? '';
+    $html = preg_replace('/<br\b[^>]*>/i', '<br>', $html) ?? '';
+    $html = preg_replace('/<b>/i', '<strong>', $html) ?? '';
+    $html = preg_replace('/<\/b>/i', '</strong>', $html) ?? '';
+    $html = preg_replace('/<i>/i', '<em>', $html) ?? '';
+    $html = preg_replace('/<\/i>/i', '</em>', $html) ?? '';
+    return trim($html);
+}
+
+function markdown_inline_html(string $text): string
+{
+    $escaped = e($text);
+    $placeholders = [];
+    $escaped = preg_replace_callback('/`([^`\n]+)`/', static function(array $m) use (&$placeholders): string {
+        $key = '@@CODE' . count($placeholders) . '@@';
+        $placeholders[$key] = '<code>' . $m[1] . '</code>';
+        return $key;
+    }, $escaped) ?? $escaped;
+
+    $escaped = preg_replace_callback('/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/i', static function(array $m): string {
+        $url = safe_external_url(html_entity_decode($m[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        if (!$url) return $m[0];
+        return '<img class="markdown-image" src="' . e($url) . '" alt="' . $m[1] . '" loading="lazy" referrerpolicy="no-referrer">';
+    }, $escaped) ?? $escaped;
+    $escaped = preg_replace_callback('/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/i', static function(array $m): string {
+        $url = safe_external_url(html_entity_decode($m[2], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        if (!$url) return $m[0];
+        return '<a href="' . e($url) . '" target="_blank" rel="noopener noreferrer">' . $m[1] . '</a>';
+    }, $escaped) ?? $escaped;
+    $escaped = preg_replace('/\*\*([^*\n]+)\*\*/', '<strong>$1</strong>', $escaped) ?? $escaped;
+    $escaped = preg_replace('/__([^_\n]+)__/', '<strong>$1</strong>', $escaped) ?? $escaped;
+    $escaped = preg_replace('/(?<!\*)\*([^*\n]+)\*(?!\*)/', '<em>$1</em>', $escaped) ?? $escaped;
+    $escaped = preg_replace('/(?<!_)_([^_\n]+)_(?!_)/', '<em>$1</em>', $escaped) ?? $escaped;
+    $escaped = preg_replace('/~~([^~\n]+)~~/', '<del>$1</del>', $escaped) ?? $escaped;
+    foreach ($placeholders as $key => $html) $escaped = str_replace($key, $html, $escaped);
+    return $escaped;
+}
+
+function markdown_to_safe_html(string $markdown): string
+{
+    $markdown = str_replace(["\r\n", "\r"], "\n", str_replace("\0", '', $markdown));
+    $lines = explode("\n", $markdown);
+    $out = [];
+    $list = null;
+    $inCode = false;
+    $code = [];
+    $closeList = static function() use (&$out, &$list): void {
+        if ($list !== null) { $out[] = '</' . $list . '>'; $list = null; }
+    };
+
+    foreach ($lines as $line) {
+        if (preg_match('/^```/', $line)) {
+            $closeList();
+            if ($inCode) { $out[] = '<pre><code>' . e(implode("\n", $code)) . '</code></pre>'; $code=[]; $inCode=false; }
+            else { $inCode=true; $code=[]; }
+            continue;
+        }
+        if ($inCode) { $code[] = $line; continue; }
+        if (trim($line) === '') { $closeList(); continue; }
+        if (preg_match('/^\s*---+\s*$/', $line)) { $closeList(); $out[]='<hr>'; continue; }
+        if (preg_match('/^###\s+(.+)$/', $line, $m)) { $closeList(); $out[]='<h3>'.markdown_inline_html($m[1]).'</h3>'; continue; }
+        if (preg_match('/^#{1,2}\s+(.+)$/', $line, $m)) { $closeList(); $out[]='<h2>'.markdown_inline_html($m[1]).'</h2>'; continue; }
+        if (preg_match('/^>\s?(.*)$/', $line, $m)) { $closeList(); $out[]='<blockquote>'.markdown_inline_html($m[1]).'</blockquote>'; continue; }
+        if (preg_match('/^\s*[-*+]\s+(.+)$/', $line, $m)) {
+            if ($list !== 'ul') { $closeList(); $list='ul'; $out[]='<ul>'; }
+            $out[]='<li>'.markdown_inline_html($m[1]).'</li>'; continue;
+        }
+        if (preg_match('/^\s*\d+[.)]\s+(.+)$/', $line, $m)) {
+            if ($list !== 'ol') { $closeList(); $list='ol'; $out[]='<ol>'; }
+            $out[]='<li>'.markdown_inline_html($m[1]).'</li>'; continue;
+        }
+        $closeList();
+        $out[]='<p>'.markdown_inline_html($line).'</p>';
+    }
+    if ($inCode) $out[]='<pre><code>'.e(implode("\n", $code)).'</code></pre>';
+    $closeList();
+    return implode("\n", $out);
+}
+
+function lesson_content_html(?string $content, ?string $format = 'rich'): string
+{
+    $content = (string)$content;
+    if (trim($content) === '') return '<p class="muted">No lesson content yet.</p>';
+    return $format === 'markdown' ? markdown_to_safe_html($content) : sanitize_rich_text($content);
 }
 
 function safe_external_url(string $url): ?string

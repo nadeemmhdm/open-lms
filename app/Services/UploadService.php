@@ -75,6 +75,36 @@ final class UploadService
         }
     }
 
+    public static function storeAnnouncementMedia(int $announcementId, array $file): array
+    {
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return [false, self::uploadError((int)($file['error'] ?? UPLOAD_ERR_NO_FILE))];
+        }
+        $tmp=(string)($file['tmp_name']??'');
+        $size=(int)($file['size']??0);
+        $original=self::safeOriginalName((string)($file['name']??'media'));
+        $ext=strtolower(pathinfo($original,PATHINFO_EXTENSION));
+        $allowed=['jpg','jpeg','png','webp','mp4'];
+        if(!in_array($ext,$allowed,true)) return [false,'Announcement media must be JPG, PNG, WebP or MP4.'];
+        $max=max(1024*1024,(int)Config::get('uploads.max_bytes',10*1024*1024));
+        if($size<1||$size>$max) return [false,'Media size is outside the configured upload limit ('.self::humanBytes($max).').'];
+        if(!is_uploaded_file($tmp)) return [false,'Upload source validation failed.'];
+        $finfo=new \finfo(FILEINFO_MIME_TYPE);$mime=(string)$finfo->file($tmp);
+        if(!in_array($mime,self::MIME_BY_EXT[$ext]??[],true)) return [false,'The media content does not match its extension.'];
+        if(!self::signatureMatches($tmp,$ext)) return [false,'The media file signature is invalid.'];
+        $relativeDir='announcements/'.$announcementId;
+        $absoluteDir=app_root().'/storage/uploads/'.$relativeDir;
+        if(!is_dir($absoluteDir)&&!mkdir($absoluteDir,0750,true)&&!is_dir($absoluteDir)) return [false,'Unable to create private announcement media directory.'];
+        $stored=bin2hex(random_bytes(24)).'.dat';$relative=$relativeDir.'/'.$stored;$absolute=app_root().'/storage/uploads/'.$relative;
+        if(!move_uploaded_file($tmp,$absolute)) return [false,'Unable to store announcement media.'];
+        @chmod($absolute,0640);
+        try{
+            Database::connection()->prepare('INSERT INTO announcement_media (announcement_id,original_name,stored_name,mime_type,size_bytes,created_at) VALUES (?,?,?,?,?,?)')
+                ->execute([$announcementId,$original,$relative,$mime,$size,gmdate('Y-m-d H:i:s')]);
+            return [true,(int)Database::connection()->lastInsertId()];
+        }catch(\Throwable $e){@unlink($absolute);throw $e;}
+    }
+
     public static function storeProjectSubmissionFile(int $submissionId, array $file, array $allowedExtensions, int $maxBytes): array
     {
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {

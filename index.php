@@ -127,6 +127,7 @@ try {
         'project' => ProjectController::view(),
         'project-file' => ProjectController::download(),
         'notifications' => SystemController::notifications(),
+        'announcement-media' => SystemController::announcementMedia(),
         'reports' => SystemController::reports(),
         'certificates' => SystemController::certificates(),
         'timetable' => SystemController::timetable(),

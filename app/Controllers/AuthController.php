@@ -72,48 +72,58 @@ final class AuthController
                 $error = 'Your session token expired. Refresh and try again.';
             } else {
                 $email = strtolower(trim((string)($_POST['email'] ?? '')));
-                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    // Keep the response generic so account existence is not exposed.
-                    $sent = true;
-                } else {
-                    $pdo = Database::connection();
-                    $ip = client_ip();
-                    $now = gmdate('Y-m-d H:i:s');
-                    $emailHash = hash('sha256', $email);
-                    try {
-                        $pdo->prepare('DELETE FROM password_reset_requests WHERE requested_at<?')->execute([gmdate('Y-m-d H:i:s', time() - 172800)]);
-                        $ipStmt = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE ip_address=? AND requested_at>=?');
-                        $ipStmt->execute([$ip, gmdate('Y-m-d H:i:s', time() - 900)]);
-                        $emailStmt = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE email_hash=? AND requested_at>=?');
-                        $emailStmt->execute([$emailHash, gmdate('Y-m-d H:i:s', time() - 3600)]);
-                        $allowed = (int)$ipStmt->fetchColumn() < 5 && (int)$emailStmt->fetchColumn() < 3;
-                        $pdo->prepare('INSERT INTO password_reset_requests (email_hash,ip_address,mail_sent,requested_at) VALUES (?,?,0,?)')
-                            ->execute([$emailHash,$ip,$now]);
-                        $requestId = (int)$pdo->lastInsertId();
+                $pdo = Database::connection();
+                $ip = client_ip();
+                $nowTs = time();
+                $now = gmdate('Y-m-d H:i:s', $nowTs);
+                $emailHash = hash('sha256', $email);
+                try {
+                    $pdo->prepare('DELETE FROM password_reset_requests WHERE requested_at<?')->execute([gmdate('Y-m-d H:i:s', $nowTs - 172800)]);
 
-                        if ($allowed) {
-                            $userStmt = $pdo->prepare("SELECT id,name,email,status FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1");
-                            $userStmt->execute([$email]);
-                            $user = $userStmt->fetch();
-                            if ($user && (string)$user['status'] === 'active' && MailService::enabled()) {
-                                $token = bin2hex(random_bytes(32));
-                                $pdo->prepare('DELETE FROM password_reset_tokens WHERE user_id=? AND used_at IS NULL')->execute([(int)$user['id']]);
-                                $pdo->prepare('INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)')
-                                    ->execute([(int)$user['id'], hash('sha256', $token), gmdate('Y-m-d H:i:s', time() + 1800), $now]);
-                                try {
-                                    MailService::sendPasswordReset($user, absolute_app_url('?r=reset-password&token=' . rawurlencode($token)));
-                                    $pdo->prepare('UPDATE password_reset_requests SET mail_sent=1 WHERE id=?')->execute([$requestId]);
-                                    Auth::audit('auth.password_reset_requested', 'Password reset email requested', null, 'user', (int)$user['id']);
-                                } catch (\Throwable $mailError) {
-                                    error_log('[OpenLMS password reset mail] ' . $mailError->getMessage());
-                                }
+                    // Request ceilings are intentionally stricter than sign-in throttles because each allowed request can send mail.
+                    $ip15 = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE ip_address=? AND requested_at>=?');
+                    $ip15->execute([$ip, gmdate('Y-m-d H:i:s', $nowTs - 900)]);
+                    $ipHour = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE ip_address=? AND requested_at>=?');
+                    $ipHour->execute([$ip, gmdate('Y-m-d H:i:s', $nowTs - 3600)]);
+                    $mail5 = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE email_hash=? AND mail_sent=1 AND requested_at>=?');
+                    $mail5->execute([$emailHash, gmdate('Y-m-d H:i:s', $nowTs - 300)]);
+                    $mailHour = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE email_hash=? AND mail_sent=1 AND requested_at>=?');
+                    $mailHour->execute([$emailHash, gmdate('Y-m-d H:i:s', $nowTs - 3600)]);
+                    $mailDay = $pdo->prepare('SELECT COUNT(*) FROM password_reset_requests WHERE email_hash=? AND mail_sent=1 AND requested_at>=?');
+                    $mailDay->execute([$emailHash, gmdate('Y-m-d H:i:s', $nowTs - 86400)]);
+
+                    $allowed = (int)$ip15->fetchColumn() < 5
+                        && (int)$ipHour->fetchColumn() < 10
+                        && (int)$mail5->fetchColumn() < 1
+                        && (int)$mailHour->fetchColumn() < 3
+                        && (int)$mailDay->fetchColumn() < 5;
+
+                    $pdo->prepare('INSERT INTO password_reset_requests (email_hash,ip_address,mail_sent,requested_at) VALUES (?,?,0,?)')
+                        ->execute([$emailHash,$ip,$now]);
+                    $requestId = (int)$pdo->lastInsertId();
+
+                    if ($allowed && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        $userStmt = $pdo->prepare("SELECT id,name,email,status FROM users WHERE LOWER(email)=LOWER(?) LIMIT 1");
+                        $userStmt->execute([$email]);
+                        $user = $userStmt->fetch();
+                        if ($user && (string)$user['status'] === 'active' && MailService::enabled()) {
+                            $token = bin2hex(random_bytes(32));
+                            $pdo->prepare('DELETE FROM password_reset_tokens WHERE user_id=? AND used_at IS NULL')->execute([(int)$user['id']]);
+                            $pdo->prepare('INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)')
+                                ->execute([(int)$user['id'], hash('sha256', $token), gmdate('Y-m-d H:i:s', $nowTs + 1800), $now]);
+                            try {
+                                MailService::sendPasswordReset($user, absolute_app_url('?r=reset-password&token=' . rawurlencode($token)));
+                                $pdo->prepare('UPDATE password_reset_requests SET mail_sent=1 WHERE id=?')->execute([$requestId]);
+                                Auth::audit('auth.password_reset_requested', 'Password reset email requested', null, 'user', (int)$user['id']);
+                            } catch (\Throwable $mailError) {
+                                error_log('[OpenLMS password reset mail] ' . $mailError->getMessage());
                             }
                         }
-                    } catch (\Throwable $e) {
-                        error_log('[OpenLMS forgot password] ' . $e->getMessage());
                     }
-                    $sent = true;
+                } catch (\Throwable $e) {
+                    error_log('[OpenLMS forgot password] ' . $e->getMessage());
                 }
+                $sent = true;
             }
         }
 
@@ -125,7 +135,7 @@ final class AuthController
           <?php if($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
           <?php if($sent): ?>
             <div class="alert alert-success">If an active account matches that email and mail delivery is available, a one-time reset link has been sent.</div>
-            <p class="hint">The link expires in 30 minutes. Check spam/junk mail if it does not appear.</p>
+            <p class="hint">The link expires in 30 minutes. For security, repeated requests are delayed and mail delivery is limited. Check spam/junk mail if it does not appear.</p>
           <?php else: ?>
             <p class="muted">Enter the email address used as your LMS username.</p>
             <form method="post" autocomplete="off">

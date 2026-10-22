@@ -19,6 +19,11 @@ Do not publish credentials, private user data, exploit details, or active-site s
 - Configure Razorpay/Stripe webhooks only with HTTPS production URLs and provider webhook secrets.
 - Review audit logs, login history, suspended accounts, active modules, and backup handling regularly.
 
+
+## Authentication abuse controls
+
+Open LMS applies server-side sign-in throttling using account/IP windows, a cooldown after repeated failures, and a separate IP-wide failure ceiling. Password recovery uses generic public responses to reduce account enumeration and applies both request ceilings and stricter mail-send ceilings before SMTP delivery. Reset tokens are single-use, stored only as SHA-256 hashes, expire after 30 minutes, and revoke existing account sessions after a successful reset.
+
 ## Backup security
 
 Open LMS backup files are authenticated and encrypted with AES-256-GCM using a key derived from the installation application key. Possession of a backup file alone should not be treated as sufficient protection: restrict filesystem access, download/store backups securely, and retain the matching application key in a protected location.
