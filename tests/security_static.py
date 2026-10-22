@@ -50,8 +50,6 @@ for prefix, needle in required_gates.items():
     src = controller_bundle(prefix)
     assert needle in src, f'missing feature gate in {prefix} controller bundle: {needle}'
 
-print(f"PASS: CSRF on literal POST forms ({len(php_files)} PHP files scanned), privilege/MFA guards, module gates, timetable/report/announcement scoping, notification wiring.")
-
 # Dashboard privacy / universal profile regression checks.
 dashboard = (ROOT / 'app/Controllers/DashboardController.php').read_text()
 index_php = (ROOT / 'index.php').read_text()
@@ -69,7 +67,8 @@ assert 'MIN_PUBLIC_ID = 100000' in invite_service and 'MAX_PUBLIC_ID = 99999999'
 assert "'used','expired','revoked'" in invite_service and 'archiveAndDelete' in invite_service, 'invite terminal states must archive and remove active links'
 assert "'join' =>" not in index_php and "if ($route === 'join')" in index_php, 'invite setup must be available before authenticated routes'
 assert 'Auth::finishLogin' in invite_controller, 'successful invite registration must sign the new user in'
-assert "create_student_invite" in admin_users and "create_role_invite" in admin_users, 'admin invite generators missing'
+onboarding_src = (ROOT / 'app/Controllers/OnboardingController.php').read_text()
+assert "InviteService::createStudent" in onboarding_src and "InviteService::create($role, 1" in onboarding_src, 'dedicated onboarding invite generators missing'
 assert "role === 'super_admin'" in invite_service, 'invite service must block Super Admin creation'
 assert 'FOR UPDATE' in invite_service and 'BEGIN IMMEDIATE' in invite_service, 'invite seat consumption needs DB locking on MySQL/SQLite'
 
@@ -91,3 +90,68 @@ assert "'onboarding' => OnboardingController::index()" in index_php, 'onboarding
 assert 'd.student_id=?' in doubt_controller, 'student doubt list must be scoped to the signed-in student'
 assert 'teacher_id=?' in doubt_controller, 'teacher doubt course scope missing'
 assert 'public_id' in doubt_controller and '100000' in doubt_controller and '99999999' in doubt_controller, 'doubt public IDs must remain 6-8 digits'
+
+# Sidebar navigation must be independently scrollable and assets cache-busted.
+modules_css = (ROOT / 'assets/css/modules.css').read_text()
+project_list = (ROOT / 'app/Controllers/ProjectListTrait.php').read_text()
+project_view = (ROOT / 'app/Controllers/ProjectViewTrait.php').read_text()
+academics = (ROOT / 'app/Controllers/AcademicController.php').read_text()
+subjects = (ROOT / 'app/Controllers/SubjectLearningTrait.php').read_text()
+assert '.sidebar>nav' in modules_css and 'overflow-y:auto!important' in modules_css and 'height:100dvh' in modules_css, 'sidebar links must own the scroll viewport'
+assert 'function asset_url' in helpers and "asset_url('assets/css/app.css')" in helpers, 'asset cache-busting helper missing'
+assert 'delete_batch' in academics and 'update_semester' in academics and 'remove_batch_member' in academics, 'academic manage/delete actions missing'
+assert 'delete_course' in subjects and 'update_course' in subjects, 'course manage/delete actions missing'
+assert 'Rubric JSON' not in project_list and 'scores JSON' not in project_view, 'raw JSON labels should not be exposed in project UI'
+
+
+# Session lifetime, timezone, maintenance, mail, payments, and support checks.
+auth_core = (ROOT / 'app/Core/Auth.php').read_text()
+settings_controller = (ROOT / 'app/Controllers/SettingsController.php').read_text()
+fee_controller = (ROOT / 'app/Controllers/FeeController.php').read_text()
+support_controller = (ROOT / 'app/Controllers/SupportController.php').read_text()
+secret_service = (ROOT / 'app/Services/SecretService.php').read_text()
+mail_service = (ROOT / 'app/Services/MailService.php').read_text()
+payment_service = (ROOT / 'app/Services/PaymentService.php').read_text()
+learning_helpers = (ROOT / 'app/Controllers/LearningHelpersTrait.php').read_text()
+subject_learning = (ROOT / 'app/Controllers/SubjectLearningTrait.php').read_text()
+notifications_trait = (ROOT / 'app/Controllers/SystemNotificationsTrait.php').read_text()
+installer = (ROOT / 'app/Services/Installer.php').read_text()
+
+assert 'NORMAL_LIFETIME = 43200' in auth_core and 'REMEMBER_LIFETIME = 86400' in auth_core, '12-hour / 1-day session policy missing'
+assert 'remember_me' in authc and 'Remember me for 1 day' in authc, 'remember-me login UI/wiring missing'
+assert 'auth_sessions' in auth_core and "hash('sha256',$token)" in auth_core.replace(' ', ''), 'hashed server-side auth session token missing'
+assert 'Auth::revokeAllSessions($uid)' in admin_users, 'suspension must revoke active sessions'
+assert 'delete_user' in admin_users and 'Auth::verifyCurrentPassword' in admin_users, 'protected user deletion wiring missing'
+assert 'Auth::revokeAllSessions((int)$row[\'user_id\'])' in authc, 'password reset must revoke existing sessions'
+
+assert 'function app_timezone' in helpers and 'function format_app_datetime' in helpers, 'LMS timezone helpers missing'
+assert "new \\DateTimeZone(app_timezone())" in helpers and 'setTimezone' in helpers, 'UTC/local timezone conversion missing'
+assert 'data-live-clock' in settings_controller and 'data-server-epoch' in settings_controller, 'server-baselined LMS clock missing'
+assert 'maintenance_mode_enabled() && !Auth::isPrivileged()' in index_php, 'maintenance mode must exempt privileged administrators'
+assert "if ($route === 'join')" in index_php and 'maintenance_mode_enabled()' in index_php, 'maintenance mode must cover public onboarding'
+
+assert "c.teacher_id=?" in learning_helpers and 'teacher_id=?' in subject_learning, 'teacher course/subject scoping missing'
+assert 'Parent accounts use the Parent portal' in subject_learning, 'parent subject browsing must be blocked'
+
+assert "'aes-256-gcm'" in secret_service and "PREFIX = 'enc:v1:'" in secret_service, 'encrypted settings secret storage missing'
+assert 'smtp_password_secret' in settings_controller and 'SecretService::encrypt($password)' in settings_controller, 'SMTP password must be encrypted before storage'
+assert 'stream_socket_client' in mail_service and 'STARTTLS' in mail_service and 'verify_peer' in mail_service, 'authenticated TLS SMTP transport missing'
+assert 'mail_login_alerts_enabled' in settings_controller and 'mail_announcements_enabled' in settings_controller, 'SMTP mail controls missing'
+assert 'sendLoginAlert' in auth_core and 'MailService::sendMany' in notifications_trait and 'send_email' in notifications_trait, 'login/announcement email wiring missing'
+
+assert "'fees' => FeeController::index()" in index_php and "'payment-webhook'" in index_php, 'fee/payment routing missing'
+assert "fi.user_id=?" in fee_controller and 'Pay with Razorpay' in fee_controller and 'Pay with Stripe' in fee_controller and 'Pay at counter' in fee_controller, 'student fee visibility/payment options missing'
+assert 'razorpay_key_secret' in settings_controller and 'stripe_secret_key' in settings_controller, 'payment gateway credential settings missing'
+assert "hash_hmac('sha256', $orderId . '|' . $paymentId" in payment_service, 'Razorpay callback HMAC verification missing'
+assert "($payment['status'] ?? '') !== 'captured'" in payment_service, 'Razorpay captured-payment verification missing'
+assert 'HTTP_STRIPE_SIGNATURE' in fee_controller and 'HTTP_X_RAZORPAY_SIGNATURE' in fee_controller, 'raw provider webhook signature headers missing'
+assert "hash_hmac('sha256', $timestamp . '.' . $payload" in payment_service and 'abs(time()-$timestamp) > 300' in payment_service, 'Stripe webhook signature/tolerance validation missing'
+assert "hash_hmac('sha256',$payload,$webhookSecret)" in payment_service, 'Razorpay webhook HMAC validation missing'
+assert 'FOR UPDATE' in payment_service and 'BEGIN IMMEDIATE' in payment_service, 'payment finalization must use DB write locking'
+
+assert "'support' => SupportController::index()" in index_php and "require_feature('support')" in support_controller, 'support module routing/gate missing'
+assert 'random_int(100000,99999999)' in support_controller, 'support ticket public IDs must remain 6-8 digits'
+assert "status']==='resolved'" in support_controller and 'Replies are now locked' in support_controller, 'resolved support tickets must reject further replies'
+assert "'support'" in installer, 'fresh installer must seed support module state'
+
+print(f"PASS: {len(php_files)} PHP files scanned; CSRF, RBAC/MFA, session lifetimes, timezone/maintenance, SMTP, payment verification, support, invite/Q&A, sidebar and scope regressions verified.")

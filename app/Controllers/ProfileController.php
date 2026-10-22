@@ -56,10 +56,19 @@ final class ProfileController
             }
         }
 
-        $stmt = $pdo->prepare('SELECT id,name,email,status,last_login_at,created_at,updated_at FROM users WHERE id=? LIMIT 1');
+        $stmt = $pdo->prepare('SELECT id,name,email,status,first_login_at,first_login_ip,first_login_user_agent,last_login_at,last_login_ip,last_login_user_agent,created_at,updated_at FROM users WHERE id=? LIMIT 1');
         $stmt->execute([$userId]);
         $account = $stmt->fetch() ?: $current;
         $roles = Auth::roles($userId);
+        $historyStmt = $pdo->prepare('SELECT ip_address,user_agent,device_label,remember_me,login_at,session_expires_at FROM user_login_history WHERE user_id=? ORDER BY login_at ASC LIMIT 1');
+        $historyStmt->execute([$userId]);
+        $firstLogin = $historyStmt->fetch() ?: null;
+        $historyStmt = $pdo->prepare('SELECT ip_address,user_agent,device_label,remember_me,login_at,session_expires_at FROM user_login_history WHERE user_id=? ORDER BY login_at DESC LIMIT 1');
+        $historyStmt->execute([$userId]);
+        $lastLogin = $historyStmt->fetch() ?: null;
+        $recentStmt = $pdo->prepare('SELECT ip_address,device_label,remember_me,login_at FROM user_login_history WHERE user_id=? ORDER BY login_at DESC LIMIT 5');
+        $recentStmt->execute([$userId]);
+        $recentLogins = $recentStmt->fetchAll();
         $flash = flash_pull();
         $mfaEnabled = Auth::mfaEnabled($userId);
         $initials = self::initials((string)$account['name']);
@@ -74,13 +83,21 @@ final class ProfileController
             <div class="profile-role-list"><?php foreach($roles as $role): ?><span class="badge"><?= e(ucwords(str_replace('_',' ',$role))) ?></span><?php endforeach; ?></div>
             <dl class="profile-meta">
               <div><dt>Status</dt><dd><?= e(ucfirst((string)$account['status'])) ?></dd></div>
-              <div><dt>Member since</dt><dd><?= e(substr((string)$account['created_at'],0,10)) ?></dd></div>
-              <div><dt>Last sign in</dt><dd><?= e((string)($account['last_login_at'] ?: 'Not recorded')) ?></dd></div>
+              <div><dt>Member since</dt><dd><?= e(format_app_datetime((string)$account['created_at'], 'Y-m-d')) ?></dd></div>
+              <div><dt>Last sign in</dt><dd><?= e($account['last_login_at'] ? format_app_datetime((string)$account['last_login_at']) : 'Not recorded') ?></dd></div>
+              <div><dt>Timezone</dt><dd><?= e(app_timezone()) ?></dd></div>
             </dl>
             <a class="btn btn-block" href="<?= e(app_url('?r=mfa-setup')) ?>">Manage MFA security</a>
           </aside>
           <div class="profile-forms">
             <section class="card"><div class="section-title"><div><h2>Personal details</h2><p class="muted">Your email is managed by the LMS administrator.</p></div></div><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="profile_action" value="details"><label>Display name<input name="name" maxlength="120" value="<?= e($account['name']) ?>" required></label><label>Email address<input value="<?= e($account['email']) ?>" disabled><small>Contact an administrator if your email needs to change.</small></label><div class="form-actions"><button class="btn btn-primary" type="submit">Save profile</button></div></form></section>
+            <section class="card"><div class="section-title"><div><h2>Sign-in details</h2><p class="muted">Times are shown in <?= e(app_timezone()) ?>.</p></div></div>
+              <div class="grid-2">
+                <details class="card" open><summary><strong>First sign in</strong></summary><?php if($firstLogin): ?><p><strong><?= e(format_app_datetime((string)$firstLogin['login_at'])) ?></strong></p><p class="hint">IP: <?= e((string)$firstLogin['ip_address']) ?><br>Device: <?= e((string)$firstLogin['device_label']) ?><br>Session: <?= (int)$firstLogin['remember_me']===1?'Remembered for 1 day':'12-hour session' ?></p><details><summary>User agent</summary><code><?= e((string)$firstLogin['user_agent']) ?></code></details><?php else: ?><p class="muted">Not recorded yet.</p><?php endif; ?></details>
+                <details class="card" open><summary><strong>Last sign in</strong></summary><?php if($lastLogin): ?><p><strong><?= e(format_app_datetime((string)$lastLogin['login_at'])) ?></strong></p><p class="hint">IP: <?= e((string)$lastLogin['ip_address']) ?><br>Device: <?= e((string)$lastLogin['device_label']) ?><br>Session: <?= (int)$lastLogin['remember_me']===1?'Remembered for 1 day':'12-hour session' ?></p><details><summary>User agent</summary><code><?= e((string)$lastLogin['user_agent']) ?></code></details><?php else: ?><p class="muted">Not recorded yet.</p><?php endif; ?></details>
+              </div>
+              <h3>Recent sign-ins</h3><div class="compact-list"><?php foreach($recentLogins as $login): ?><div><span><strong><?= e(format_app_datetime((string)$login['login_at'])) ?></strong><small><?= e((string)$login['device_label']) ?> · <?= e((string)$login['ip_address']) ?></small></span><span class="badge"><?= (int)$login['remember_me']===1?'1 day':'12 h' ?></span></div><?php endforeach; ?><?php if(!$recentLogins): ?><p class="muted">No sign-in history yet.</p><?php endif; ?></div>
+            </section>
             <section class="card"><div class="section-title"><div><h2>Change password</h2><p class="muted">Use at least 12 characters and avoid reusing your current password.</p></div></div><form method="post" autocomplete="off"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="profile_action" value="password"><label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><div class="form-row"><label>New password<input name="new_password" type="password" minlength="12" autocomplete="new-password" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="12" autocomplete="new-password" required></label></div><div class="form-actions"><button class="btn btn-primary" type="submit">Update password</button></div></form></section>
           </div>
         </div>

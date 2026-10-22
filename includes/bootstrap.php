@@ -30,6 +30,7 @@ if (is_file($configFile)) {
     session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>false,'httponly'=>true,'samesite'=>'Lax']);
 }
 if (session_status() !== PHP_SESSION_ACTIVE) session_start();
+if (is_file($configFile)) { try { date_default_timezone_set(app_timezone()); } catch (\Throwable) { date_default_timezone_set('UTC'); } }
 
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');

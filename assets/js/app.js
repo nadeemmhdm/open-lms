@@ -64,6 +64,22 @@
     userChip.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProfile(); } });
   }
 
+  document.querySelectorAll('[data-live-clock]').forEach((clock) => {
+    const timeZone = clock.dataset.timezone || 'UTC';
+    const serverEpoch = Number(clock.dataset.serverEpoch || 0) * 1000;
+    const loadedAt = Date.now();
+    let formatter;
+    try {
+      formatter = new Intl.DateTimeFormat('en-CA', {timeZone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+    } catch (_) { return; }
+    const tick = () => {
+      const timestamp = serverEpoch > 0 ? serverEpoch + (Date.now() - loadedAt) : Date.now();
+      clock.textContent = formatter.format(new Date(timestamp)).replace(',', '');
+    };
+    tick();
+    setInterval(tick, 1000);
+  });
+
   document.querySelectorAll('[data-copy-button]').forEach((button) => {
     button.addEventListener('click', async () => {
       const field = button.closest('.copy-field')?.querySelector('[data-copy-source]');

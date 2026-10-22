@@ -29,6 +29,14 @@ function absolute_app_url(string $path = ''): string
     return ($secure ? 'https://' : 'http://') . $host . app_url($path);
 }
 
+function asset_url(string $path): string
+{
+    $path = ltrim($path, '/');
+    $full = app_root() . '/' . $path;
+    $version = is_file($full) ? (string)filemtime($full) : '1';
+    return app_url($path) . '?v=' . rawurlencode($version);
+}
+
 function client_ip(): string
 {
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
@@ -45,39 +53,46 @@ function render_page(string $title, string $content, bool $withShell = true): vo
 {
     $appName = class_exists('OpenLMS\\Core\\Config') ? (string) \OpenLMS\Core\Config::get('app.name', 'Open LMS') : 'Open LMS';
     $user = is_file(app_root() . '/config/config.php') && class_exists('OpenLMS\\Core\\Auth') ? \OpenLMS\Core\Auth::user() : null;
-    ?><!doctype html><html lang="en" data-theme="auto"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title><?= e($title) ?> · <?= e($appName) ?></title><link rel="stylesheet" href="<?= e(app_url('assets/css/app.css')) ?>"><link rel="stylesheet" href="<?= e(app_url('assets/css/modules.css')) ?>"></head><body>
+    $roles = (array)($user['roles'] ?? []);
+    $isPrivileged = $user && \OpenLMS\Core\Auth::isPrivileged();
+    $isStudent = in_array('student', $roles, true);
+    $isParent = in_array('parent', $roles, true);
+    $isParentOnly = $isParent && !(bool)array_intersect(['student','teacher','hod','administrator','super_admin','examiner'], $roles);
+    $canManageCourses = $user && \OpenLMS\Core\Auth::can('courses.manage');
+    ?><!doctype html><html lang="en" data-theme="auto"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title><?= e($title) ?> · <?= e($appName) ?></title><link rel="stylesheet" href="<?= e(asset_url('assets/css/app.css')) ?>"><link rel="stylesheet" href="<?= e(asset_url('assets/css/modules.css')) ?>"></head><body>
     <?php if ($withShell && $user): ?>
     <div class="app-shell"><aside class="sidebar">
       <a class="brand" href="<?= e(app_url('?r=dashboard')) ?>"><span class="brand-mark">OL</span><strong><?= e($appName) ?></strong></a>
       <nav>
         <?= nav_link('dashboard','Dashboard') ?>
-        <?= nav_link('subjects','Courses') ?>
-        <?php if(in_array('student', $user['roles'] ?? [], true) || \OpenLMS\Core\Auth::can('courses.manage') || \OpenLMS\Core\Auth::isPrivileged()): ?><?= nav_link('doubts','Doubts & Q&A') ?><?php endif; ?>
-        <?php if(feature_enabled('attendance')): ?><?= nav_link('attendance','Attendance') ?><?php endif; ?>
-        <?php if(feature_enabled('question_bank') && \OpenLMS\Core\Auth::can('questions.manage')): ?><?= nav_link('questions','Questions') ?><?php endif; ?>
-        <?php if(feature_enabled('quizzes') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('quizzes','Quizzes') ?><?php endif; ?>
-        <?php if(feature_enabled('exams') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('exams','Exams') ?><?php endif; ?>
-        <?php if(in_array('student', $user['roles'] ?? [], true) && (feature_enabled('quizzes') || feature_enabled('exams'))): ?><?= nav_link('assessments','Assessments') ?><?php endif; ?>
-        <?php if(feature_enabled('projects')): ?><?= nav_link('projects','Projects') ?><?php endif; ?>
-        <?php if(feature_enabled('gradebook')): ?><?= nav_link('gradebook','Gradebook') ?><?php endif; ?>
+        <?php if(!$isParentOnly): ?><?= nav_link('subjects','Courses') ?><?php endif; ?>
+        <?php if(!$isParentOnly && ($isStudent || $canManageCourses || $isPrivileged)): ?><?= nav_link('doubts','Doubts & Q&A') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('attendance')): ?><?= nav_link('attendance','Attendance') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('question_bank') && \OpenLMS\Core\Auth::can('questions.manage')): ?><?= nav_link('questions','Questions') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('quizzes') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('quizzes','Quizzes') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('exams') && \OpenLMS\Core\Auth::can('exams.manage')): ?><?= nav_link('exams','Exams') ?><?php endif; ?>
+        <?php if(!$isParentOnly && $isStudent && (feature_enabled('quizzes') || feature_enabled('exams'))): ?><?= nav_link('assessments','Assessments') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('projects')): ?><?= nav_link('projects','Projects') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('gradebook')): ?><?= nav_link('gradebook','Gradebook') ?><?php endif; ?>
         <?php if(feature_enabled('notifications')): ?><?= nav_link('notifications','Notifications') ?><?php endif; ?>
-        <?php if(feature_enabled('timetable')): ?><?= nav_link('timetable','Timetable') ?><?php endif; ?>
-        <?php if(feature_enabled('certificates')): ?><?= nav_link('certificates','Certificates') ?><?php endif; ?>
-        <?php if(feature_enabled('reports') && \OpenLMS\Core\Auth::can('reports.view')): ?><?= nav_link('reports','Reports') ?><?php endif; ?>
-        <?php if(feature_enabled('fee_management')): ?><?= nav_link('fees','Fees') ?><?php endif; ?>
-        <?php if(feature_enabled('parent_portal') && in_array('parent',$user['roles'],true)): ?><?= nav_link('parent-portal','Parent portal') ?><?php endif; ?>
-        <?php if(feature_enabled('search')): ?><?= nav_link('search','Search') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('timetable')): ?><?= nav_link('timetable','Timetable') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('certificates')): ?><?= nav_link('certificates','Certificates') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('reports') && \OpenLMS\Core\Auth::can('reports.view')): ?><?= nav_link('reports','Reports') ?><?php endif; ?>
+        <?php if(feature_enabled('fee_management') && ($isPrivileged || $isStudent)): ?><?= nav_link('fees','Fees') ?><?php endif; ?>
+        <?php if(feature_enabled('parent_portal') && $isParent): ?><?= nav_link('parent-portal','Parent portal') ?><?php endif; ?>
+        <?php if(!$isParentOnly && feature_enabled('search')): ?><?= nav_link('search','Search') ?><?php endif; ?>
+        <?php if(feature_enabled('support')): ?><?= nav_link('support','Support') ?><?php endif; ?>
         <?= nav_link('profile','My profile') ?>
         <?= nav_link('mfa-setup','Security') ?>
-        <?php if(\OpenLMS\Core\Auth::can('academics.manage')): ?><?= nav_link('academics','Academics') ?><?php endif; ?>
-        <?php if(\OpenLMS\Core\Auth::isPrivileged()): ?>
-          <?= nav_link('onboarding','Onboarding') ?><?= nav_link('users','Users') ?><?php if(\OpenLMS\Core\Auth::hasAnyRole(['super_admin'])): ?><?= nav_link('roles','Roles') ?><?php endif; ?><?= nav_link('features','Modules') ?><?= nav_link('diagnostics','Diagnostics') ?><?= nav_link('audit','Audit log') ?><?php if(feature_enabled('backup_restore')): ?><?= nav_link('backup','Backup') ?><?php endif; ?>
+        <?php if(!$isParentOnly && \OpenLMS\Core\Auth::can('academics.manage')): ?><?= nav_link('academics','Academics') ?><?php endif; ?>
+        <?php if($isPrivileged): ?>
+          <?= nav_link('onboarding','Onboarding') ?><?= nav_link('users','Users') ?><?php if(\OpenLMS\Core\Auth::hasAnyRole(['super_admin'])): ?><?= nav_link('roles','Roles') ?><?php endif; ?><?= nav_link('settings','Settings') ?><?= nav_link('features','Modules') ?><?= nav_link('diagnostics','Diagnostics') ?><?= nav_link('audit','Audit log') ?><?php if(feature_enabled('backup_restore')): ?><?= nav_link('backup','Backup') ?><?php endif; ?>
         <?php endif; ?>
       </nav>
       <div class="sidebar-bottom"><button class="theme-btn" type="button" data-theme-toggle>Theme</button><form method="post" action="<?= e(app_url('?r=logout')) ?>"><input type="hidden" name="_csrf" value="<?= e(\OpenLMS\Core\Csrf::token()) ?>"><button class="nav-link nav-button" type="submit">Sign out</button></form></div>
     </aside><main class="main"><header class="topbar"><button class="menu-btn" data-menu-toggle aria-label="Toggle menu" aria-expanded="true"><span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span></button><div></div><div class="user-chip"><span><?= e($user['name']) ?></span><small><?= e($user['email']) ?></small></div></header><div class="page-content"><?= $content ?></div></main></div>
     <?php else: ?><main class="standalone"><?= $content ?></main><button class="floating-theme theme-btn" type="button" data-theme-toggle>Theme</button><?php endif; ?>
-    <script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-1.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-2.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-3.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-4.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/app.js')) ?>" defer></script></body></html><?php
+    <script src="<?= e(asset_url('assets/js/vendor/openlms-qrcode-modules-1.js')) ?>" defer></script><script src="<?= e(asset_url('assets/js/vendor/openlms-qrcode-modules-2.js')) ?>" defer></script><script src="<?= e(asset_url('assets/js/vendor/openlms-qrcode-modules-3.js')) ?>" defer></script><script src="<?= e(asset_url('assets/js/vendor/openlms-qrcode-modules-4.js')) ?>" defer></script><script src="<?= e(asset_url('assets/js/vendor/openlms-qrcode.js')) ?>" defer></script><script src="<?= e(asset_url('assets/js/app.js')) ?>" defer></script></body></html><?php
 }
 
 function render_status_page(int $status, string $title, string $message, ?string $actionLabel = null, ?string $actionUrl = null): void
@@ -136,19 +151,67 @@ function lesson_embed_url(string $url): ?string
     return null;
 }
 
+function app_timezone(): string
+{
+    $fallback = class_exists('OpenLMS\\Core\\Config') ? (string)\OpenLMS\Core\Config::get('app.timezone', 'UTC') : 'UTC';
+    $timezone = $fallback !== '' ? $fallback : 'UTC';
+    try {
+        if (class_exists('OpenLMS\\Services\\SettingsService')) {
+            $timezone = (string)\OpenLMS\Services\SettingsService::get('app_timezone', $timezone);
+        }
+        new \DateTimeZone($timezone);
+        return $timezone;
+    } catch (\Throwable) {
+        return 'UTC';
+    }
+}
+
+function format_app_datetime(?string $utcValue, string $format = 'Y-m-d H:i'): string
+{
+    if (!$utcValue) return '—';
+    try {
+        $dt = new \DateTimeImmutable((string)$utcValue, new \DateTimeZone('UTC'));
+        return $dt->setTimezone(new \DateTimeZone(app_timezone()))->format($format);
+    } catch (\Throwable) {
+        return (string)$utcValue;
+    }
+}
+
 function utc_datetime_from_input(?string $value): ?string
 {
     $value = trim((string)$value);
     if ($value === '') return null;
-    $dt = \DateTimeImmutable::createFromFormat('Y-m-d\\TH:i', $value, new \DateTimeZone('UTC'));
-    return $dt ? $dt->format('Y-m-d H:i:s') : null;
+    try {
+        $tz = new \DateTimeZone(app_timezone());
+        $dt = \DateTimeImmutable::createFromFormat('!Y-m-d\\TH:i', $value, $tz);
+        $errors = \DateTimeImmutable::getLastErrors();
+        if (!$dt || (is_array($errors) && ($errors['warning_count'] || $errors['error_count']))) return null;
+        return $dt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    } catch (\Throwable) { return null; }
 }
 
 function datetime_input_value(?string $value): string
 {
     if (!$value) return '';
-    try { return (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))->format('Y-m-d\\TH:i'); }
-    catch (\Throwable) { return ''; }
+    try {
+        return (new \DateTimeImmutable((string)$value, new \DateTimeZone('UTC')))
+            ->setTimezone(new \DateTimeZone(app_timezone()))
+            ->format('Y-m-d\\TH:i');
+    } catch (\Throwable) { return ''; }
+}
+
+function maintenance_mode_enabled(): bool
+{
+    try { return class_exists('OpenLMS\\Services\\SettingsService') && \OpenLMS\Services\SettingsService::bool('maintenance_enabled', false); }
+    catch (\Throwable) { return false; }
+}
+
+function maintenance_message(): string
+{
+    try {
+        $message = class_exists('OpenLMS\\Services\\SettingsService') ? trim((string)\OpenLMS\Services\SettingsService::get('maintenance_message', 'Open LMS is temporarily unavailable for maintenance.')) : '';
+        return $message !== '' ? $message : 'Open LMS is temporarily unavailable for maintenance.';
+    } catch (\Throwable) { return 'Open LMS is temporarily unavailable for maintenance.'; }
 }
 
 function feature_enabled(string $key): bool

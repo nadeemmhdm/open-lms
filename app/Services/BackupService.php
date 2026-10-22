@@ -11,7 +11,7 @@ final class BackupService
     private const AAD = 'OPENLMS-BACKUP-V2';
 
     private const TABLES = [
-        'roles','permissions','users','user_roles','role_permissions','academic_years','departments','classes','sections','batches','semesters','batch_members','subjects','courses','course_batches','enrollments','course_sections','lessons','lesson_links','lesson_prerequisites','learning_materials','lesson_progress','attendance_sessions','attendance_records','attendance_corrections','question_banks','questions','question_options','quizzes','quiz_questions','exam_attempts','attempt_questions','exam_answers','exam_events','projects','project_groups','project_group_members','project_submissions','submission_files','project_submission_events','grades','feature_settings','app_settings','notifications','announcements','certificates','timetable_entries','live_classes','parent_student_links','fee_invoices','fee_payments','password_reset_tokens','course_completions','mfa_credentials','login_attempts','audit_logs','schema_migrations'
+        'roles','permissions','users','user_roles','role_permissions','user_login_history','academic_years','departments','classes','sections','batches','semesters','batch_members','subjects','courses','course_batches','enrollments','course_sections','lessons','lesson_links','lesson_prerequisites','learning_materials','lesson_progress','attendance_sessions','attendance_records','attendance_corrections','question_banks','questions','question_options','quizzes','quiz_questions','exam_attempts','attempt_questions','exam_answers','exam_events','projects','project_groups','project_group_members','project_submissions','submission_files','project_submission_events','grades','feature_settings','app_settings','notifications','announcements','certificates','timetable_entries','live_classes','parent_student_links','fee_invoices','fee_payments','payment_transactions','support_tickets','support_replies','password_reset_tokens','course_completions','mfa_credentials','login_attempts','audit_logs','schema_migrations'
     ];
 
     public static function createEncrypted(int $actorUserId): array
@@ -171,6 +171,8 @@ final class BackupService
                 $stage = null;
             }
 
+            // Authentication sessions are intentionally never backed up or restored.
+            try { $pdo->exec('DELETE FROM auth_sessions'); } catch (\Throwable) {}
             $pdo->prepare('UPDATE backup_history SET restored_at=? WHERE file_name=?')->execute([gmdate('Y-m-d H:i:s'), $name]);
             $pdo->commit();
             if ($oldUploads && is_dir($oldUploads)) self::removeTree($oldUploads);

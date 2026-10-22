@@ -13,11 +13,12 @@ final class AuthController
             header('Location: ' . app_url('?r=dashboard')); exit;
         }
         $error = null;
+        $flash = flash_pull();
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!Csrf::validate($_POST['_csrf'] ?? null)) {
                 $error = 'Your session token expired. Refresh and try again.';
             } else {
-                [$ok, $state] = Auth::attempt((string) ($_POST['email'] ?? ''), (string) ($_POST['password'] ?? ''), client_ip());
+                [$ok, $state] = Auth::attempt((string) ($_POST['email'] ?? ''), (string) ($_POST['password'] ?? ''), client_ip(), isset($_POST['remember_me']));
                 if ($ok && $state === 'mfa') { header('Location: ' . app_url('?r=mfa-challenge')); exit; }
                 if ($ok) { header('Location: ' . app_url('?r=dashboard')); exit; }
                 $error = $state;
@@ -29,11 +30,13 @@ final class AuthController
                 <div class="brand-mark">OL</div>
                 <h1>Welcome back</h1>
                 <p class="muted">Sign in to your learning workspace.</p>
+                <?php if ($flash): ?><div class="alert <?= ($flash['type'] ?? '') === 'success' ? 'alert-success' : 'alert-danger' ?>"><?= e((string)($flash['message'] ?? '')) ?></div><?php endif; ?>
                 <?php if ($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
                 <form method="post" autocomplete="on">
                     <input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>">
                     <label>Email<input type="email" name="email" required autocomplete="username"></label>
                     <label>Password<input type="password" name="password" required autocomplete="current-password"></label>
+                    <label class="check-inline"><input type="checkbox" name="remember_me" value="1"> Remember me for 1 day</label><p class="hint">Without this option, the sign-in session expires after 12 hours.</p>
                     <button class="btn btn-primary btn-block" type="submit">Sign in</button>
                 </form>
             </section>
@@ -83,6 +86,7 @@ final class AuthController
                         $pdo->prepare('UPDATE users SET password_hash=?,updated_at=? WHERE id=?')->execute([password_hash($password, PASSWORD_DEFAULT),$now,(int)$row['user_id']]);
                         $pdo->prepare('DELETE FROM password_reset_tokens WHERE user_id=? AND id<>?')->execute([(int)$row['user_id'],(int)$row['id']]);
                         $pdo->commit();
+                        Auth::revokeAllSessions((int)$row['user_id']);
                         Auth::audit('auth.password_reset', 'Password reset token used', (int)$row['user_id'], 'user', (int)$row['user_id']);
                         ob_start(); ?><div class="auth-wrap"><section class="auth-card card"><div class="brand-mark">OL</div><h1>Password updated</h1><p>Your one-time reset link is now invalid.</p><a class="btn btn-primary btn-block" href="<?= e(app_url('?r=login')) ?>">Sign in</a></section></div><?php render_page('Password updated', ob_get_clean(), false); return;
                     } catch (\Throwable $e) {

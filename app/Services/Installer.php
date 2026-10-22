@@ -271,9 +271,9 @@ final class Installer
         self::upsertSetting($pdo, 'installed_at', gmdate('c'), 0, $now);
         self::upsertSetting($pdo, 'mfa_required_roles', json_encode(['super_admin']), 0, $now);
 
-        $features = ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','certificates','timetable','parent_portal','live_classes','fee_management','search','backup_restore'];
+        $features = ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','certificates','timetable','parent_portal','live_classes','fee_management','search','backup_restore','support'];
         foreach ($features as $feature) {
-            $enabled = in_array($feature, ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','search','backup_restore'], true) ? 1 : 0;
+            $enabled = in_array($feature, ['attendance','question_bank','quizzes','exams','projects','gradebook','notifications','announcements','reports','search','backup_restore','support'], true) ? 1 : 0;
             $find = $pdo->prepare('SELECT id FROM feature_settings WHERE feature_key=? LIMIT 1');
             $find->execute([$feature]);
             if ($find->fetchColumn()) {

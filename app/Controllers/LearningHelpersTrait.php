@@ -8,10 +8,12 @@ trait LearningHelpersTrait
 {
     private static function subjectRowsForUser(PDO $pdo,array $user): array
     {
-        if(in_array('student',$user['roles'],true)){
+        $roles=(array)($user['roles']??[]);
+        if(in_array('parent',$roles,true) && !(bool)array_intersect(['student','teacher','hod','administrator','super_admin'], $roles)) return [];
+        if(in_array('student',$roles,true)){
             $sql="SELECT s.* FROM subjects s WHERE s.status='active' AND EXISTS (SELECT 1 FROM courses c WHERE c.subject_id=s.id AND c.status='published' AND (EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=? AND e.status IN ('active','completed')) OR EXISTS (SELECT 1 FROM course_batches cb INNER JOIN batch_members bm ON bm.batch_id=cb.batch_id WHERE cb.course_id=c.id AND bm.user_id=?))) ORDER BY s.name";$st=$pdo->prepare($sql);$st->execute([(int)$user['id'],(int)$user['id']]);return $st->fetchAll();
         }
-        if(in_array('teacher',$user['roles'],true) && !self::canManageSubjects($user)) return $pdo->query("SELECT * FROM subjects WHERE status='active' ORDER BY name")->fetchAll();
+        if(in_array('teacher',$roles,true) && !self::canManageSubjects($user)){ $st=$pdo->prepare("SELECT DISTINCT s.* FROM subjects s JOIN courses c ON c.subject_id=s.id WHERE s.status='active' AND c.teacher_id=? AND c.status<>'archived' ORDER BY s.name");$st->execute([(int)$user['id']]);return $st->fetchAll(); }
         return $pdo->query('SELECT * FROM subjects ORDER BY status, name')->fetchAll();
     }
 
@@ -39,7 +41,7 @@ trait LearningHelpersTrait
     private static function prerequisiteIds(PDO $pdo,int $lessonId):array{$st=$pdo->prepare('SELECT prerequisite_lesson_id FROM lesson_prerequisites WHERE lesson_id=?');$st->execute([$lessonId]);return array_map('intval',$st->fetchAll(PDO::FETCH_COLUMN));}
 
     private static function canManageSubjects(array $user):bool{return (bool)array_intersect(['super_admin','administrator','hod'],$user['roles']??[]);}
-    private static function canViewSubject(PDO $pdo,array $subject,array $user):bool{if(self::canManageSubjects($user))return true;if(in_array('teacher',$user['roles'],true))return $subject['status']==='active';$rows=self::courseRowsForSubject($pdo,(int)$subject['id'],$user);return !empty($rows);}
+    private static function canViewSubject(PDO $pdo,array $subject,array $user):bool{if(self::canManageSubjects($user))return true;$roles=(array)($user['roles']??[]);if(in_array('parent',$roles,true)&&!(bool)array_intersect(['student','teacher','hod','administrator','super_admin'],$roles))return false;if(in_array('teacher',$roles,true)){ $st=$pdo->prepare("SELECT COUNT(*) FROM courses WHERE subject_id=? AND teacher_id=? AND status<>'archived'");$st->execute([(int)$subject['id'],(int)$user['id']]);return (int)$st->fetchColumn()>0;} $rows=self::courseRowsForSubject($pdo,(int)$subject['id'],$user);return !empty($rows);}
     private static function teacherAccounts(PDO $pdo):array{return $pdo->query("SELECT DISTINCT u.id,u.name,u.email FROM users u INNER JOIN user_roles ur ON ur.user_id=u.id INNER JOIN roles r ON r.id=ur.role_id WHERE r.name IN ('teacher','hod') AND u.status='active' ORDER BY u.name")->fetchAll();}
     private static function isStudent(PDO $pdo,int $id):bool{$st=$pdo->prepare("SELECT COUNT(*) FROM users u INNER JOIN user_roles ur ON ur.user_id=u.id INNER JOIN roles r ON r.id=ur.role_id WHERE u.id=? AND u.status='active' AND r.name='student'");$st->execute([$id]);return (int)$st->fetchColumn()>0;}
 

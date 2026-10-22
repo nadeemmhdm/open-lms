@@ -6,6 +6,7 @@ use OpenLMS\Core\Csrf;
 use OpenLMS\Core\Database;
 use OpenLMS\Policies\CoursePolicy;
 use OpenLMS\Services\BackupService;
+use OpenLMS\Services\MailService;
 
 trait SystemNotificationsTrait
 {
@@ -58,6 +59,11 @@ trait SystemNotificationsTrait
                         $pdo->prepare('INSERT INTO announcements (title,body,audience,course_id,batch_id,created_by,published_at,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?)')
                             ->execute([$title,$body,$audience,$courseId,$batchId,(int)$u['id'],$now,$expires,$now]);
                         $message = 'Announcement published.';
+                        if (isset($_POST['send_email']) && MailService::announcementMailEnabled()) {
+                            $recipients = self::announcementRecipients($pdo, $audience, $courseId, $batchId);
+                            $mail = MailService::sendMany($recipients, '[Open LMS] ' . $title, $body . "\n\nPublished: " . format_app_datetime($now, 'Y-m-d H:i T'));
+                            $message .= ' Email sent to ' . $mail['sent'] . ' recipient(s)' . ($mail['failed'] ? '; ' . $mail['failed'] . ' failed.' : '.');
+                        }
                     }
                 } catch (\Throwable $e) {
                     $error = $e instanceof \RuntimeException ? $e->getMessage() : 'Unable to update notifications.';
@@ -104,7 +110,8 @@ trait SystemNotificationsTrait
           <label>Title<input name="title" maxlength="180" required></label><label>Message<textarea name="body" maxlength="4000" required></textarea></label>
           <div class="form-row"><label>Audience<select name="audience"><?php if($globalPublisher):?><option value="all">All users</option><?php endif;?><option value="course">Course</option><?php if($globalPublisher):?><option value="batch">Batch</option><?php endif;?></select></label><label>Expires<input type="datetime-local" name="expires_at"></label></div>
           <div class="form-row"><label>Course<select name="course_id"><option value="">—</option><?php foreach($courses as $c):?><option value="<?=(int)$c['id']?>"><?=e($c['title'])?></option><?php endforeach;?></select></label><?php if($globalPublisher):?><label>Batch<select name="batch_id"><option value="">—</option><?php foreach($batches as $b):?><option value="<?=(int)$b['id']?>"><?=e($b['name'])?></option><?php endforeach;?></select></label><?php endif;?></div>
-          <button class="btn btn-primary">Publish</button>
+          <?php if(MailService::announcementMailEnabled()): ?><label class="check-row"><input type="checkbox" name="send_email" value="1"> Also send this announcement by email</label><?php endif; ?>
+          <p class="hint">Expiry uses the LMS timezone: <?= e(app_timezone()) ?>.</p><button class="btn btn-primary">Publish</button>
         </form></section><?php endif;?>
         <div class="grid-2"><?php if($announcementsEnabled): ?><section class="card"><h2>Announcements</h2><div class="compact-list">
           <?php foreach($ann as $a):?><div><span><strong><?=e($a['title'])?></strong><small><?=e($a['body'])?></small></span><span class="badge"><?=e($a['audience'])?></span></div><?php endforeach;?>
@@ -114,5 +121,17 @@ trait SystemNotificationsTrait
           <?php if(!$notes):?><p class="muted">No personal notifications.</p><?php endif;?>
         </div></section></div>
         <?php render_page('Notifications', ob_get_clean());
+    }
+
+    private static function announcementRecipients(\PDO $pdo, string $audience, ?int $courseId, ?int $batchId): array
+    {
+        if ($audience === 'all') return $pdo->query("SELECT email FROM users WHERE status='active' AND email<>''")->fetchAll(\PDO::FETCH_COLUMN);
+        if ($audience === 'batch' && $batchId) {
+            $st=$pdo->prepare("SELECT DISTINCT u.email FROM users u JOIN batch_members bm ON bm.user_id=u.id WHERE bm.batch_id=? AND u.status='active' AND u.email<>''");$st->execute([$batchId]);return $st->fetchAll(\PDO::FETCH_COLUMN);
+        }
+        if ($audience === 'course' && $courseId) {
+            $st=$pdo->prepare("SELECT DISTINCT u.email FROM users u WHERE u.status='active' AND u.email<>'' AND (EXISTS(SELECT 1 FROM enrollments e WHERE e.user_id=u.id AND e.course_id=? AND e.status IN ('active','completed')) OR EXISTS(SELECT 1 FROM batch_members bm JOIN course_batches cb ON cb.batch_id=bm.batch_id WHERE bm.user_id=u.id AND cb.course_id=?) OR EXISTS(SELECT 1 FROM courses c WHERE c.id=? AND c.teacher_id=u.id))");$st->execute([$courseId,$courseId,$courseId]);return $st->fetchAll(\PDO::FETCH_COLUMN);
+        }
+        return [];
     }
 }

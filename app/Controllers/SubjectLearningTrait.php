@@ -12,6 +12,10 @@ trait SubjectLearningTrait
         Auth::requireAuth();
         $pdo = Database::connection();
         $user = Auth::user();
+        $roles=(array)($user['roles']??[]);
+        if(in_array('parent',$roles,true) && !(bool)array_intersect(['student','teacher','hod','administrator','super_admin'],$roles)){
+            render_status_page(403,'Parent learning view','Parent accounts use the Parent portal to view linked student course progress. Lesson and subject browsing is not available.','Open Parent portal',app_url('?r=parent-portal'));return;
+        }
         $canManageSubjects = self::canManageSubjects($user);
         $message = $error = null;
 
@@ -103,6 +107,21 @@ trait SubjectLearningTrait
                         $status=in_array((string)($_POST['status']??'draft'),['draft','published'],true)?(string)$_POST['status']:'draft';
                         $now=gmdate('Y-m-d H:i:s'); $pdo->prepare('INSERT INTO courses (subject_id,title,description,teacher_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')->execute([$id,$title,trim((string)($_POST['description']??''))?:null,$teacherId,$status,$now,$now]);
                         $courseId=(int)$pdo->lastInsertId(); Auth::audit('courses.create','Created course '.$title,null,'course',$courseId); $message='Course created.';
+                    } elseif (in_array($action,['update_course','delete_course'],true)) {
+                        $courseId=(int)($_POST['course_id']??0);$st=$pdo->prepare('SELECT * FROM courses WHERE id=? AND subject_id=? LIMIT 1');$st->execute([$courseId,$id]);$target=$st->fetch();
+                        if(!$target) throw new \RuntimeException('Course not found.');
+                        $canManageCourse=$canManageSubjects || (in_array('teacher',$user['roles'],true) && (int)$target['teacher_id']===(int)$user['id']);
+                        if(!$canManageCourse) throw new \RuntimeException('You do not have permission to manage this course.');
+                        if($action==='update_course'){
+                            $title=trim((string)($_POST['title']??''));if($title==='')throw new \RuntimeException('Course title is required.');
+                            $status=in_array((string)($_POST['status']??'draft'),['draft','published','archived'],true)?(string)$_POST['status']:'draft';
+                            $teacherId=$canManageSubjects?self::idOrNull($_POST['teacher_id']??null):(int)$target['teacher_id'];
+                            $pdo->prepare('UPDATE courses SET title=?,description=?,teacher_id=?,status=?,updated_at=? WHERE id=?')->execute([$title,trim((string)($_POST['description']??''))?:null,$teacherId,$status,gmdate('Y-m-d H:i:s'),$courseId]);
+                            Auth::audit('courses.update','Updated course '.$title,null,'course',$courseId);$message='Course updated.';
+                        }else{
+                            if(self::courseDeleteDependencyCount($pdo,$courseId)>0)throw new \RuntimeException('This course already contains learning data or student activity. Archive it instead of deleting it.');
+                            $pdo->prepare('DELETE FROM courses WHERE id=?')->execute([$courseId]);Auth::audit('courses.delete','Deleted empty course',null,'course',$courseId);$message='Course deleted.';
+                        }
                     } else if ($action !== '') {
                         $error='You do not have permission for that action.';
                     }
@@ -120,11 +139,18 @@ trait SubjectLearningTrait
         <div class="page-head"><div><span class="badge"><?= e($subject['code'] ?: 'SUBJECT') ?></span><h1><?= e($subject['name']) ?></h1><p class="muted"><?= e($subject['description'] ?: 'No description yet.') ?></p></div><?php if($canCreateCourse): ?><a class="btn btn-primary" href="#new-course">New course</a><?php endif; ?></div>
         <?php if($message): ?><div class="alert alert-success"><?= e($message) ?></div><?php endif; ?><?php if($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
 
-        <?php if(!$courses): ?><section class="card empty-state"><h2>No courses available</h2><p class="muted">Courses assigned to you will appear here.</p></section><?php else: ?><div class="course-grid"><?php foreach($courses as $c): ?><article class="card course-card"><div class="course-card-top"><span class="badge <?= $c['status']==='published'?'badge-ok':'' ?>"><?= e($c['status']) ?></span><span class="muted"><?= (int)$c['lesson_count'] ?> lessons</span></div><h2><?= e($c['title']) ?></h2><p><?= e($c['description'] ?: 'No course description.') ?></p><div class="teacher-line"><span class="avatar-mini"><?= e(self::initials($c['teacher_name'] ?: 'NA')) ?></span><span><?= e($c['teacher_name'] ?: 'Teacher not assigned') ?></span></div><div class="progress-label"><span>Progress</span><strong><?= (int)$c['progress_percent'] ?>%</strong></div><div class="progress-track"><span style="width:<?= (int)$c['progress_percent'] ?>%"></span></div><a class="btn btn-primary btn-block" href="<?= e(app_url('?r=course&id='.(int)$c['id'])) ?>">Open course</a></article><?php endforeach; ?></div><?php endif; ?>
+        <?php if(!$courses): ?><section class="card empty-state"><h2>No courses available</h2><p class="muted">Courses assigned to you will appear here.</p></section><?php else: ?><div class="course-grid"><?php foreach($courses as $c): $canManageThisCourse=$canManageSubjects || (in_array('teacher',$user['roles'],true) && (int)$c['teacher_id']===(int)$user['id']); ?><article class="card course-card"><div class="course-card-top"><span class="badge <?= $c['status']==='published'?'badge-ok':'' ?>"><?= e($c['status']) ?></span><span class="muted"><?= (int)$c['lesson_count'] ?> lessons</span></div><h2><?= e($c['title']) ?></h2><p><?= e($c['description'] ?: 'No course description.') ?></p><div class="teacher-line"><span class="avatar-mini"><?= e(self::initials($c['teacher_name'] ?: 'NA')) ?></span><span><?= e($c['teacher_name'] ?: 'Teacher not assigned') ?></span></div><div class="progress-label"><span>Progress</span><strong><?= (int)$c['progress_percent'] ?>%</strong></div><div class="progress-track"><span style="width:<?= (int)$c['progress_percent'] ?>%"></span></div><a class="btn btn-primary btn-block" href="<?= e(app_url('?r=course&id='.(int)$c['id'])) ?>">Open course</a><?php if($canManageThisCourse): ?><details class="course-manage"><summary>Manage course</summary><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="update_course"><input type="hidden" name="course_id" value="<?= (int)$c['id'] ?>"><label>Title<input name="title" value="<?= e($c['title']) ?>" required></label><label>Description<textarea name="description" rows="3"><?= e($c['description']) ?></textarea></label><?php if($canManageSubjects): ?><label>Teacher<select name="teacher_id"><option value="">Unassigned</option><?php foreach($teachers as $t): ?><option value="<?= (int)$t['id'] ?>" <?= (int)$c['teacher_id']===(int)$t['id']?'selected':'' ?>><?= e($t['name']) ?></option><?php endforeach; ?></select></label><?php endif; ?><label>Status<select name="status"><option value="draft" <?= $c['status']==='draft'?'selected':'' ?>>Draft</option><option value="published" <?= $c['status']==='published'?'selected':'' ?>>Published</option><option value="archived" <?= $c['status']==='archived'?'selected':'' ?>>Archived</option></select></label><button class="btn btn-small">Save course</button></form><form method="post" onsubmit="return confirm('Delete this course? Only empty courses can be deleted.')"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="delete_course"><input type="hidden" name="course_id" value="<?= (int)$c['id'] ?>"><button class="btn btn-small btn-danger" type="submit">Delete empty course</button></form></details><?php endif; ?></article><?php endforeach; ?></div><?php endif; ?>
 
         <?php if($canCreateCourse): ?><section class="card form-card" id="new-course"><h2>Create course</h2><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="create_course"><label>Course title<input name="title" required maxlength="180"></label><label>Description<textarea name="description" rows="4" maxlength="5000"></textarea></label><?php if($canManageSubjects): ?><label>Teacher<select name="teacher_id"><option value="">Unassigned</option><?php foreach($teachers as $t): ?><option value="<?= (int)$t['id'] ?>"><?= e($t['name'].' · '.$t['email']) ?></option><?php endforeach; ?></select></label><?php endif; ?><label>Status<select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></label><button class="btn btn-primary">Create course</button></form></section><?php endif; ?>
 
         <?php if($canManageSubjects): ?><details class="card settings-panel"><summary>Edit subject</summary><form method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="action" value="update_subject"><div class="form-row"><label>Name<input name="name" value="<?= e($subject['name']) ?>" required></label><label>Code<input name="code" value="<?= e($subject['code']) ?>"></label></div><label>Description<textarea name="description" rows="3"><?= e($subject['description']) ?></textarea></label><label>Thumbnail URL<input type="url" name="thumbnail" value="<?= e($subject['thumbnail']) ?>"></label><button class="btn">Save subject</button></form></details><?php endif; ?>
         <?php render_page($subject['name'], ob_get_clean());
+    }
+
+    private static function courseDeleteDependencyCount(\PDO $pdo,int $courseId):int
+    {
+        $relations=[['course_sections','course_id'],['enrollments','course_id'],['course_batches','course_id'],['attendance_sessions','course_id'],['question_banks','course_id'],['quizzes','course_id'],['projects','course_id'],['grades','course_id'],['announcements','course_id'],['certificates','course_id'],['timetable_entries','course_id'],['live_classes','course_id'],['course_completions','course_id'],['registration_invite_courses','course_id'],['doubts','course_id']];
+        $total=0;foreach($relations as [$table,$column]){try{$st=$pdo->prepare("SELECT COUNT(*) FROM {$table} WHERE {$column}=?");$st->execute([$courseId]);$total+=(int)$st->fetchColumn();}catch(\Throwable){}}
+        return $total;
     }
 }

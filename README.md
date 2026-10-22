@@ -10,11 +10,12 @@ Phases 1–6 are implemented in this repository.
 - First-run web installer with safe environment diagnostics.
 - First Super Admin creation and `storage/install.lock` installer lock.
 - MySQL/MariaDB default for InfinityFree; optional SQLite adapter where supported.
-- Secure sessions, password hashing, CSRF, prepared statements, login throttling and audit logs.
+- Secure sessions, password hashing, CSRF, prepared statements, login throttling and audit logs. Standard sessions expire after 12 hours; optional Remember me sessions expire after 1 day and are backed by hashed server-side session tokens.
 - Server-side roles/permissions, protected Super Admin elevation/removal rules and account suspension controls.
 - One-time 30-minute password-reset links for trusted manual delivery.
 - Admin-generated self-service onboarding links: seat-limited bulk Student links and one-user role setup links with 6–8 digit public IDs, hashed secrets, automatic expiry/consumption and immediate sign-in after account creation. Bulk Student links can carry an Academic Year, Batch and selected Courses so registration automatically adds batch membership and enrollments.
 - RFC 6238 TOTP MFA with locally generated QR enrollment, encrypted secrets, replay prevention, one-time hashed recovery codes, challenge throttling, mandatory-role policy, user disable/re-enroll, and Super-Admin-authorized MFA reset.
+- User profile sign-in history records first/recent login time, IP and device label.
 - Responsive light/dark UI and safe diagnostics.
 
 ### Phase 2 — academics and learning
@@ -57,11 +58,13 @@ Phases 1–6 are implemented in this repository.
 - Verifiable/revocable course-completion certificates.
 - Weekly timetable and optional external live-class links with batch privacy controls.
 - Optional parent/guardian read-only portal for explicitly linked students.
-- Optional fee invoice/payment-recording module (not a payment gateway).
+- Fee invoicing with admin edit/delete/reconciliation, student due-invoice visibility, cash-counter workflow, Razorpay Orders/Checkout, and Stripe hosted Checkout with verified callbacks/webhooks.
 - Authorization-aware search with a server-side module switch.
+- Admin-controlled LMS timezone with UTC database storage, maintenance mode, authenticated SMTP delivery/login alerts/announcement email controls, and real-time server-baselined LMS clock.
+- Built-in Support/Help Desk tickets with 6–8 digit IDs, admin replies and locked resolved threads.
 - Configurable encrypted application backup/restore including referenced private upload bytes.
-- Versioned migrations through `009_onboarding_doubts` plus security/regression tests.
-- Server-side module switches for optional announcements, search, backup/restore, certificates, timetable/live classes, parent portal and fee management.
+- Versioned migrations through `010_security_mail_payments_support` plus security/regression tests.
+- Server-side module switches for optional announcements, search, backup/restore, certificates, timetable/live classes, parent portal, fee management and support.
 
 ## Runtime requirements
 
@@ -74,7 +77,7 @@ Recommended: PHP 8.1+ with PDO, sessions, OpenSSL, mbstring and Fileinfo. For In
 3. Open the website. If `config/config.php` and `storage/install.lock` do not exist, Open LMS displays its first-run installer.
 4. Select **MySQL / MariaDB (InfinityFree)** and enter the exact database host/name/user/password from the hosting panel. Do not assume `localhost`.
 5. Enter the institution name and first Super Admin credentials (minimum 12-character password).
-6. The installer applies all pending migrations `001`–`009`, seeds roles/permissions/features, creates the first Super Admin, generates a random application encryption key, writes `config/config.php`, and creates `storage/install.lock`.
+6. The installer applies all pending migrations `001`–`010`, seeds roles/permissions/features, creates the first Super Admin, generates a random application encryption key, writes `config/config.php`, and creates `storage/install.lock`.
 7. Sign in. The Super Admin is required to enroll authenticator MFA before continuing.
 
 Expected upload layout:
@@ -127,6 +130,7 @@ Both adapters use ordered versioned migrations:
 - `007_installer_seed_repair_*` — safe recovery for interrupted first-run seeds
 - `008_registration_invites_*` — secure self-service account onboarding links and invite history states
 - `009_onboarding_doubts_*` — batch/course-aware Student onboarding plus Doubts & Q&A threads
+- `010_security_mail_payments_support_*` — timezone/settings, persistent login sessions/history, SMTP controls, payment transactions and Support/Help Desk
 
 `schema_migrations` prevents intentional reapplication. Existing installations run the migration checker at startup and only missing versions are applied. Back up before deploying a new schema version.
 
@@ -140,7 +144,7 @@ Then open `http://127.0.0.1:8080/`. A supported PDO driver is required to comple
 
 ## Verification
 
-Local automated checks include PHP syntax lint, JavaScript syntax, migrations `001`–`009` in a temporary SQLite database, cross-module integrity workflows, RFC 6238 vectors, local QR generation, CSRF/security wiring and first-run installer HTTP rendering. See `TESTING.md` for exact commands and the required InfinityFree/MySQL acceptance checklist.
+Local automated checks include PHP syntax lint, JavaScript syntax, migrations `001`–`010` in a temporary SQLite database, cross-module integrity workflows, RFC 6238 vectors, local QR generation, CSRF/security wiring and first-run installer HTTP rendering. See `TESTING.md` for exact commands and the required InfinityFree/MySQL acceptance checklist.
 
 The current build environment does **not** expose a PHP PDO database driver, so a live PHP/MySQL migration and end-to-end deployment cannot truthfully be marked as tested here. Complete the target-host checklist before treating an installation as production-ready.
 

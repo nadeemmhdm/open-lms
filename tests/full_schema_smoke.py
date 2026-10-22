@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable SQLite smoke test for Open LMS migrations 001-009."""
+"""Portable SQLite smoke test for Open LMS migrations 001-010."""
 from pathlib import Path
 import os, sqlite3, tempfile
 
@@ -10,7 +10,7 @@ db = sqlite3.connect(path)
 db.execute('PRAGMA foreign_keys=ON')
 try:
     migrations = sorted(ROOT.glob('database/migrations/*_sqlite.sql'))
-    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006','007','008','009']
+    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006','007','008','009','010']
     for migration in migrations:
         db.executescript(migration.read_text(encoding='utf-8'))
     db.commit()
@@ -25,7 +25,8 @@ try:
         'submission_files','notifications','announcements','certificates',
         'timetable_entries','live_classes','parent_student_links','fee_invoices',
         'password_reset_tokens','backup_history','mfa_credentials','feature_settings',
-        'registration_invites','registration_invite_history','registration_invite_contexts','registration_invite_courses','doubts','doubt_replies'
+        'registration_invites','registration_invite_history','registration_invite_contexts','registration_invite_courses','doubts','doubt_replies',
+        'auth_sessions','user_login_history','payment_transactions','support_tickets','support_replies'
     }
     missing = sorted(required - tables)
     assert not missing, f'missing tables: {missing}'
@@ -76,11 +77,23 @@ try:
     db.execute("INSERT INTO doubt_replies(doubt_id,user_id,body,created_at) VALUES(?,?, 'Reply',datetime('now'))", (doubt_id,uid))
     assert db.execute("SELECT COUNT(*) FROM doubts WHERE public_id BETWEEN 100000 AND 99999999").fetchone()[0] == 1
 
+    # Session history, support tickets and payments introduced by 010.
+    db.execute("INSERT INTO auth_sessions(user_id,token_hash,remember_me,ip_address,user_agent,device_label,created_at,last_seen_at,expires_at) VALUES(?, 'sesshash',1,'127.0.0.1','UA','Test Device',datetime('now'),datetime('now'),datetime('now','+1 day'))", (uid,))
+    db.execute("INSERT INTO user_login_history(user_id,ip_address,user_agent,device_label,remember_me,login_at,session_expires_at) VALUES(?, '127.0.0.1','UA','Test Device',1,datetime('now'),datetime('now','+1 day'))", (uid,))
+    db.execute("INSERT INTO support_tickets(public_id,user_id,subject,category,priority,status,created_at,updated_at) VALUES(876543,?,'Help','technical','normal','open',datetime('now'),datetime('now'))", (uid,))
+    support_id=db.execute("SELECT id FROM support_tickets WHERE public_id=876543").fetchone()[0]
+    db.execute("INSERT INTO support_replies(ticket_id,sender_user_id,body,created_at) VALUES(?,?, 'Issue details',datetime('now'))", (support_id,uid))
+    db.execute("INSERT INTO fee_invoices(user_id,title,amount,due_on,status,created_at,currency,notes,updated_at) VALUES(?,'Tuition',1000,NULL,'unpaid',datetime('now'),'INR',NULL,datetime('now'))", (uid,))
+    invoice_id=db.execute("SELECT id FROM fee_invoices WHERE title='Tuition'").fetchone()[0]
+    db.execute("INSERT INTO payment_transactions(invoice_id,user_id,provider,status,amount,currency,provider_order_id,created_at,updated_at) VALUES(?,?,'cash','pending',1000,'INR','cash-test',datetime('now'),datetime('now'))", (invoice_id,uid))
+    assert db.execute("SELECT COUNT(*) FROM feature_settings WHERE feature_key='support' AND enabled=1").fetchone()[0] == 1
+    assert db.execute("SELECT setting_value FROM app_settings WHERE setting_key='app_timezone'").fetchone()[0] == 'UTC'
+
     db.execute("INSERT INTO password_reset_tokens(user_id,token_hash,expires_at,created_at) VALUES(?, 'hash',datetime('now','+1 hour'),datetime('now'))", (uid,))
     db.execute("INSERT INTO backup_history(file_name,driver,size_bytes,created_by,created_at) VALUES('test.olmsbak','sqlite',1,?,datetime('now'))", (uid,))
     assert db.execute('PRAGMA foreign_key_check').fetchall() == []
-    assert len(tables) >= 65
-    print('PASS: migrations 001-009, required LMS tables, unique constraints and foreign-key integrity.')
+    assert len(tables) >= 70
+    print('PASS: migrations 001-010, required LMS tables, unique constraints and foreign-key integrity.')
 finally:
     db.close()
     try: os.unlink(path)

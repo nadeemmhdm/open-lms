@@ -16,3 +16,22 @@
 @media (max-width:980px){.dashboard-hero{align-items:flex-start;flex-direction:column}.dashboard-actions{width:100%}.profile-grid{grid-template-columns:1fr}.profile-summary{position:static}.quick-links{grid-template-columns:1fr}}
 @media (max-width:720px){body.sidebar-hidden .app-shell{grid-template-columns:1fr}body.sidebar-hidden .sidebar{width:min(300px,86vw);padding:20px 14px;border-right:1px solid var(--border);visibility:visible}.dashboard-actions .btn{flex:1}.profile-page-head{flex-direction:column}.form-actions .btn{width:100%}}
 @media (max-width:480px){.dashboard-hero{padding:18px}.dashboard-actions{display:grid;grid-template-columns:1fr;width:100%}.quick-links{grid-template-columns:1fr}.profile-summary,.profile-forms .card{padding:18px}}
+
+/* Stable sidebar viewport: brand and footer stay fixed; only links scroll. */
+.sidebar{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.sidebar>.brand{flex:0 0 auto;min-height:54px}
+.sidebar>nav{display:block;flex:1 1 auto;min-height:0;max-height:100%;overflow-y:auto!important;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding:0 4px 12px 0;scrollbar-gutter:stable}
+.sidebar>nav>.nav-link{display:block;width:100%;margin-bottom:5px}
+.sidebar>.sidebar-bottom{flex:0 0 auto;margin-top:0;padding-top:8px;border-top:1px solid var(--border);background:var(--surface)}
+.sidebar>nav:focus-within{scroll-behavior:smooth}
+
+/* Compact management controls for academic/course records. */
+.mini-manage,.table-manage,.course-manage{position:relative}
+.mini-manage>summary,.table-manage>summary,.course-manage>summary{cursor:pointer;list-style:none;color:var(--primary);font-size:.8rem;font-weight:750}
+.mini-manage>summary::-webkit-details-marker,.table-manage>summary::-webkit-details-marker,.course-manage>summary::-webkit-details-marker{display:none}
+.mini-manage[open],.table-manage[open],.course-manage[open]{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:10px}
+.mini-manage form,.table-manage form,.course-manage form{margin-top:10px;min-width:min(320px,72vw)}
+.course-manage{margin-top:2px}
+.btn-danger{border-color:color-mix(in srgb,var(--danger) 35%,var(--border));color:var(--danger);background:color-mix(in srgb,var(--danger) 7%,var(--surface))}
+.action-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+@media(max-width:720px){.sidebar{height:100dvh}.sidebar>nav{padding-bottom:18px}.mini-manage form,.table-manage form,.course-manage form{min-width:0;width:100%}}

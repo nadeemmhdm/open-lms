@@ -25,7 +25,7 @@ trait AdminUtilityTrait
         ob_start(); ?>
         <div class="page-head"><div><h1>Modules</h1><p class="muted">Enable or disable optional LMS capabilities.</p></div></div>
         <?php if($message): ?><div class="alert alert-success"><?= e($message) ?></div><?php endif; ?>
-        <div class="feature-grid"><?php foreach($features as $f): ?><form class="card feature-card" method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="feature" value="<?= e($f['feature_key']) ?>"><div><h3><?= e(ucwords(str_replace('_',' ',$f['feature_key']))) ?></h3><small>Updated <?= e($f['updated_at']) ?> UTC</small></div><label class="switch"><input type="checkbox" name="enabled" <?= $f['enabled']?'checked':'' ?> onchange="this.form.submit()"><span></span></label></form><?php endforeach; ?></div>
+        <div class="feature-grid"><?php foreach($features as $f): ?><form class="card feature-card" method="post"><input type="hidden" name="_csrf" value="<?= e(Csrf::token()) ?>"><input type="hidden" name="feature" value="<?= e($f['feature_key']) ?>"><div><h3><?= e(ucwords(str_replace('_',' ',$f['feature_key']))) ?></h3><small>Updated <?= e(format_app_datetime((string)$f['updated_at'])) ?></small></div><label class="switch"><input type="checkbox" name="enabled" <?= $f['enabled']?'checked':'' ?> onchange="this.form.submit()"><span></span></label></form><?php endforeach; ?></div>
         <?php render_page('Modules', ob_get_clean());
     }
     public static function audit(): void

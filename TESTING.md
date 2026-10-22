@@ -16,20 +16,20 @@ node tests/qrcode_smoke.js
 python3 tests/security_static.py
 ```
 
-`tests/full_schema_smoke.py` applies all SQLite migrations and exercises representative integrity relationships across academics, attendance, quizzes/exams, projects, grades, notifications, certificates, timetable, parent links, fees, reset tokens and backup history, registration invites/invite history, onboarding year/batch/course mappings, and doubts/replies. It also runs a foreign-key integrity check.
+`tests/full_schema_smoke.py` applies all SQLite migrations and exercises representative integrity relationships across academics, attendance, quizzes/exams, projects, grades, notifications, certificates, timetable, parent links, fees, reset tokens and backup history, registration invites/invite history, onboarding year/batch/course mappings, and doubts/replies, auth sessions/login history, payment transactions, and support tickets/replies. It also runs a foreign-key integrity check.
 
 `tests/totp_rfc_test.php` verifies the underlying TOTP/HOTP calculation against RFC 6238 SHA-1 vectors.
 
 `tests/qrcode_smoke.js` verifies the local bundled QR encoder can produce an SVG from an authenticator provisioning URI without a network service.
 
-`tests/security_static.py` scans rendered POST forms for CSRF fields and guards against regressions in Super Admin elevation, MFA reset/challenge throttling, module gating (including announcements/search/backup), announcement scope, report scope and timetable batch privacy.
+`tests/security_static.py` scans rendered POST forms for CSRF fields and guards against regressions in Super Admin elevation, MFA reset/challenge throttling, module gating (including announcements/search/backup), announcement scope, report scope, timetable batch privacy, 12h/1-day auth sessions, maintenance mode, timezone conversion, encrypted SMTP/payment secrets, gateway signature verification, student fee scoping, and support ticket closure rules.
 
 ## Manual/target-host acceptance checklist
 
 Before public use on InfinityFree/MySQL:
 
 1. Installer diagnostics all required capabilities.
-2. Fresh MySQL database applies migrations `001`–`009` without SQL errors.
+2. Fresh MySQL database applies migrations `001`–`010` without SQL errors.
 3. First Super Admin can sign in, is forced to MFA setup, can sign out/in with TOTP and can use a recovery code exactly once.
 4. Invalid credentials hit login rate limits without revealing whether an account exists.
 5. Administrator cannot suspend or elevate itself to Super Admin.
@@ -55,6 +55,16 @@ Before public use on InfinityFree/MySQL:
 25. A single-role setup link creates exactly one account with the selected non-Super-Admin role, signs the user in, and cannot be reused. Expired and revoked links show the custom unavailable page.
 26. A Student onboarding link applies the selected Academic Year/Batch context, adds the new Student to the batch, and enrolls the Student in every selected course.
 27. Students can only see their own Doubts/Q&A threads; teachers only see course doubts for courses they teach; administrators can oversee all and teaching staff can resolve questions.
+28. LMS timezone can be changed to `Asia/Kolkata` (or another IANA zone); exam/quiz/project/live-class/lesson schedule inputs display in that zone while persisted timestamps remain UTC.
+29. Sign-in without Remember me expires after 12 hours; Remember me expires after 1 day; profile shows first/recent login time, IP and device information.
+30. Suspending a user revokes active server-side sessions and a subsequent sign-in shows the suspended/contact-administration message.
+31. Maintenance mode blocks non-admin application/onboarding access while Super Admin/Administrator accounts retain dashboard and feature access.
+32. Teacher course/subject views expose only courses assigned to that teacher; parent-only accounts cannot browse normal subjects/courses and use Parent Portal progress instead.
+33. SMTP test delivery works using the configured host/port/TLS/SSL/username/app password; login-alert and announcement-mail switches work independently.
+34. Student fee portal shows only that student's invoices. Cash-counter, Razorpay test-mode, and Stripe test-mode flows record exactly one verified payment and reject bad signatures/amounts.
+35. Payment provider webhooks use their configured webhook secret and the raw request body; duplicate provider callbacks remain idempotent.
+36. All authenticated roles can raise Support tickets; only administrators can view all tickets; once resolved, both user and administrator replies are rejected.
+37. Admin user deletion protects self/Super Admin and requires the current administrator password; protected financial/audit relations fall back to suspension instead of unsafe deletion.
 
 ## Current build-environment limitation
 

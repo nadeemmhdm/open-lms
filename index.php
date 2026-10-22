@@ -13,6 +13,9 @@ use OpenLMS\Controllers\DashboardController;
 use OpenLMS\Controllers\DoubtController;
 use OpenLMS\Controllers\OnboardingController;
 use OpenLMS\Controllers\ProfileController;
+use OpenLMS\Controllers\SettingsController;
+use OpenLMS\Controllers\SupportController;
+use OpenLMS\Controllers\FeeController;
 use OpenLMS\Controllers\RegistrationInviteController;
 use OpenLMS\Controllers\AdminController;
 use OpenLMS\Controllers\DiagnosticsController;
@@ -71,9 +74,18 @@ try {
     if ($route === 'mfa-challenge') { MfaController::challenge(); exit; }
     if ($route === 'reset-password') { AuthController::resetPassword(); exit; }
     if ($route === 'certificate-verify') { SystemController::certificateVerify(); exit; }
-    if ($route === 'join') { RegistrationInviteController::show(); exit; }
+    if ($route === 'payment-webhook') { FeeController::webhook(); exit; }
+    if ($route === 'join') {
+        if (maintenance_mode_enabled()) { render_status_page(503, 'Maintenance mode', maintenance_message(), 'Back to sign in', app_url('?r=login')); exit; }
+        RegistrationInviteController::show(); exit;
+    }
 
     Auth::requireAuth();
+
+    if (maintenance_mode_enabled() && !Auth::isPrivileged()) {
+        render_status_page(503, 'Maintenance mode', maintenance_message());
+        exit;
+    }
 
     // Roles selected in the server-side MFA policy must enroll TOTP before using LMS functions.
     $mustEnrollMfa = current_user_mfa_required() && !Auth::mfaEnabled();
@@ -85,6 +97,8 @@ try {
     match ($route) {
         'dashboard' => DashboardController::show(),
         'profile' => ProfileController::show(),
+        'settings' => SettingsController::index(),
+        'support' => SupportController::index(),
         'doubts' => DoubtController::index(),
         'onboarding' => OnboardingController::index(),
         'mfa-setup' => MfaController::setup(),
@@ -117,7 +131,10 @@ try {
         'timetable' => SystemController::timetable(),
         'backup' => SystemController::backup(),
         'search' => SystemController::search(),
-        'fees' => SystemController::fees(),
+        'fees' => FeeController::index(),
+        'payment-start' => FeeController::start(),
+        'payment-razorpay-verify' => FeeController::razorpayVerify(),
+        'payment-stripe-return' => FeeController::stripeReturn(),
         'parent-portal' => SystemController::parentPortal(),
         'users' => AdminController::users(),
         'roles' => AdminController::roles(),

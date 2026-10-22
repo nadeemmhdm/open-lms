@@ -22,4 +22,8 @@ trait ProjectHelpersTrait
     private static function submission(int $id):?array{$st=Database::connection()->prepare('SELECT * FROM project_submissions WHERE id=?');$st->execute([$id]);return $st->fetch()?:null;}
     private static function submissionsForProject(array $p,array $u,bool $manage):array{$pdo=Database::connection();if($manage){$st=$pdo->prepare('SELECT ps.*,u.name owner_name,pg.name group_name FROM project_submissions ps JOIN users u ON u.id=ps.user_id LEFT JOIN project_groups pg ON pg.id=ps.group_id WHERE ps.project_id=? ORDER BY ps.id DESC');$st->execute([(int)$p['id']]);}else{$st=$pdo->prepare('SELECT ps.*,u.name owner_name,pg.name group_name FROM project_submissions ps JOIN users u ON u.id=ps.user_id LEFT JOIN project_groups pg ON pg.id=ps.group_id WHERE ps.project_id=? AND (ps.user_id=? OR ps.group_id IN (SELECT group_id FROM project_group_members WHERE user_id=?)) ORDER BY ps.id DESC');$st->execute([(int)$p['id'],(int)$u['id'],(int)$u['id']]);}return $st->fetchAll();}
     private static function submissionFiles(int $sid):array{$st=Database::connection()->prepare('SELECT * FROM submission_files WHERE submission_id=? ORDER BY id');$st->execute([$sid]);return $st->fetchAll();}
+    private static function humanizeStoredText(string $value):string
+    {
+        $value=trim($value);if($value==='')return '';$decoded=json_decode($value,true);if(!is_array($decoded))return $value;$lines=[];foreach($decoded as $key=>$item){if(is_scalar($item)||$item===null)$lines[]=(is_string($key)?$key.': ':'').(string)$item;}return $lines?implode("\n",$lines):$value;
+    }
 }
