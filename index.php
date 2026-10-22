@@ -11,6 +11,7 @@ use OpenLMS\Controllers\AuthController;
 use OpenLMS\Controllers\MfaController;
 use OpenLMS\Controllers\DashboardController;
 use OpenLMS\Controllers\ProfileController;
+use OpenLMS\Controllers\RegistrationInviteController;
 use OpenLMS\Controllers\AdminController;
 use OpenLMS\Controllers\DiagnosticsController;
 use OpenLMS\Controllers\AcademicController;
@@ -55,8 +56,7 @@ if (!$installed) {
 }
 
 if ($route === 'install') {
-    http_response_code(404);
-    render_page('Not found','<div class="card"><h2>Installer locked</h2><p>Open LMS is already installed.</p></div>');
+    render_status_page(404, 'Installer unavailable', 'Open LMS is already installed, so the first-run installer is locked.', 'Open dashboard', app_url('?r=dashboard'));
     exit;
 }
 
@@ -69,6 +69,7 @@ try {
     if ($route === 'mfa-challenge') { MfaController::challenge(); exit; }
     if ($route === 'reset-password') { AuthController::resetPassword(); exit; }
     if ($route === 'certificate-verify') { SystemController::certificateVerify(); exit; }
+    if ($route === 'join') { RegistrationInviteController::show(); exit; }
 
     Auth::requireAuth();
 
@@ -119,10 +120,9 @@ try {
         'features' => AdminController::features(),
         'audit' => AdminController::audit(),
         'diagnostics' => DiagnosticsController::show(),
-        default => (function(){ http_response_code(404); render_page('Not found','<div class="card"><h2>404</h2><p>The requested page was not found.</p></div>'); })(),
+        default => (function(){ render_status_page(404, 'Page not found', 'The page you requested does not exist or is no longer available.', 'Back to dashboard', app_url('?r=dashboard')); })(),
     };
 } catch (Throwable $e) {
     error_log('[OpenLMS] ' . $e->getMessage());
-    http_response_code(500);
-    render_page('Server error','<div class="card"><h2>Something went wrong</h2><p>The error was logged. No private server details are shown.</p></div>');
+    render_status_page(500, 'Something went wrong', 'The server could not complete this request. The error has been logged without exposing private details.', 'Back to dashboard', app_url('?r=dashboard'));
 }
