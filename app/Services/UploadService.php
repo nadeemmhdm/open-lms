@@ -12,6 +12,8 @@ final class UploadService
         'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/x-zip'],
         'ppt'  => ['application/vnd.ms-powerpoint', 'application/x-ole-storage', 'application/CDFV2', 'application/octet-stream'],
         'pptx' => ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/zip', 'application/x-zip'],
+        'xls'  => ['application/vnd.ms-excel', 'application/x-ole-storage', 'application/CDFV2', 'application/octet-stream'],
+        'xlsx' => ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip', 'application/x-zip'],
         'jpg'  => ['image/jpeg'],
         'jpeg' => ['image/jpeg'],
         'png'  => ['image/png'],
@@ -33,7 +35,7 @@ final class UploadService
         $max = max(1024 * 1024, (int) Config::get('uploads.max_bytes', 10 * 1024 * 1024));
 
         if (!isset(self::MIME_BY_EXT[$ext])) {
-            return [false, 'Unsupported file type. Allowed: PDF, DOC, DOCX, PPT, PPTX, JPG, PNG, WebP, MP4 and ZIP.'];
+            return [false, 'Unsupported file type. Allowed: PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX, JPG, PNG, WebP, MP4 and ZIP.'];
         }
         if ($size < 1 || $size > $max) {
             return [false, 'File size is outside the configured upload limit (' . self::humanBytes($max) . ').'];
@@ -175,8 +177,8 @@ final class UploadService
             'png' => str_starts_with($hex, '89504E470D0A1A0A'),
             'webp' => strlen($head) >= 12 && substr($head, 0, 4) === 'RIFF' && substr($head, 8, 4) === 'WEBP',
             'mp4' => strlen($head) >= 12 && substr($head, 4, 4) === 'ftyp',
-            'doc', 'ppt' => str_starts_with($hex, 'D0CF11E0A1B11AE1'),
-            'docx', 'pptx', 'zip' => str_starts_with($hex, '504B0304') || str_starts_with($hex, '504B0506') || str_starts_with($hex, '504B0708'),
+            'doc', 'ppt', 'xls' => str_starts_with($hex, 'D0CF11E0A1B11AE1'),
+            'docx', 'pptx', 'xlsx', 'zip' => str_starts_with($hex, '504B0304') || str_starts_with($hex, '504B0506') || str_starts_with($hex, '504B0708'),
             default => false,
         };
     }

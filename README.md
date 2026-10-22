@@ -19,6 +19,7 @@ Open LMS provides a complete foundation for institutions that need a practical L
 - Teacher/staff invitation links with expiry and single-use controls.
 - Course structure using **Subject → Course → Chapter → Lesson**.
 - Rich-text and Markdown lesson authoring.
+- Lesson resources from protected uploads or external HTTPS links, including Google Drive, Google Docs, OneDrive, Dropbox, YouTube, Vimeo, direct PDF/document/image/video URLs, and other providers.
 - Lesson headings, bold, italic, underline, lists, quotes, links, code blocks, and Markdown images.
 - Private lesson uploads for documents, images, presentations, ZIP files, and MP4 video.
 - Inline lesson image/video playback with authorization-checked file delivery.
@@ -91,7 +92,7 @@ Open LMS uses ordered SQL migrations. Existing installations should not be reset
 3. Preserve `config/config.php`, `storage/install.lock`, the live database, and existing private uploads.
 4. Open the LMS. Missing migrations are applied automatically.
 
-The stable `v1.0.0` codebase currently includes migrations `001` through `012`.
+The stable `v1.0.0` codebase currently includes migrations `001` through `013`.
 
 ## Authentication security
 

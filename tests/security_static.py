@@ -192,4 +192,12 @@ assert '# Open LMS' in readme and 'v1.0.0' in readme and 'MIT' in readme and 'Co
 assert not (ROOT / 'CODE_OF_CONDUCT.md').exists() and not (ROOT / 'CONTRIBUTING.md').exists() and not (ROOT / 'TESTING.md').exists(), 'redundant markdown files should stay consolidated into README/SECURITY'
 assert not (ROOT / 'app/Helpers').exists() and not (ROOT / 'app/Models').exists(), 'empty source folders should not remain in stable package'
 
-print(f"PASS: {len(php_files)} PHP files scanned; stable v1.0 security, recovery, backup V3, branding, sidebar, content-management and scope regressions verified.")
+assert "Remember me for 1 day" in authc
+assert "lesson_resource_type" in helpers
+assert "lesson_resource_preview_url" in helpers
+assert "Google Drive" in lesson_learning
+assert "value=\"pdf\"" in lesson_learning
+assert "value=\"document\"" in lesson_learning
+assert (ROOT / 'database/migrations/013_lesson_external_resources_mysql.sql').exists(), 'lesson external resource migration missing'
+
+print(f"PASS: {len(php_files)} PHP files scanned; stable v1.0 security, recovery, backup V3, branding, sidebar, content-management, external-resource and scope regressions verified.")

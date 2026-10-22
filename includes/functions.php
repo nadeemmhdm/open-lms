@@ -264,6 +264,70 @@ function lesson_embed_url(string $url): ?string
     return null;
 }
 
+function lesson_resource_type(string $url, string $requested = 'auto'): string
+{
+    $allowed = ['link','video','image','pdf','document'];
+    if (in_array($requested, $allowed, true)) return $requested;
+    if (lesson_embed_url($url) !== null) return 'video';
+    $parts = parse_url($url);
+    $host = strtolower((string)($parts['host'] ?? ''));
+    $path = strtolower((string)($parts['path'] ?? ''));
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    if (in_array($ext, ['mp4','webm','mov','m4v'], true)) return 'video';
+    if (in_array($ext, ['jpg','jpeg','png','webp','gif','avif'], true)) return 'image';
+    if ($ext === 'pdf') return 'pdf';
+    if (in_array($ext, ['doc','docx','ppt','pptx','xls','xlsx','odt','ods','odp','txt','rtf'], true)) return 'document';
+    if (in_array($host, ['docs.google.com','drive.google.com','www.dropbox.com','dropbox.com','onedrive.live.com','1drv.ms'], true)) return 'document';
+    return 'link';
+}
+
+function lesson_resource_preview_url(string $url, string $type): ?string
+{
+    if ($type === 'video') {
+        $embed = lesson_embed_url($url);
+        if ($embed) return $embed;
+    }
+    $parts = parse_url($url);
+    if (!is_array($parts)) return null;
+    $host = strtolower((string)($parts['host'] ?? ''));
+    $path = (string)($parts['path'] ?? '');
+    if ($host === 'drive.google.com') {
+        if (preg_match('~/file/d/([A-Za-z0-9_-]+)~', $path, $m)) return 'https://drive.google.com/file/d/'.rawurlencode($m[1]).'/preview';
+        parse_str((string)($parts['query'] ?? ''), $q);
+        if (!empty($q['id']) && preg_match('/^[A-Za-z0-9_-]+$/', (string)$q['id'])) return 'https://drive.google.com/file/d/'.rawurlencode((string)$q['id']).'/preview';
+    }
+    if ($host === 'docs.google.com' && preg_match('~/(document|spreadsheets|presentation)/d/([A-Za-z0-9_-]+)~', $path, $m)) {
+        return 'https://docs.google.com/'.$m[1].'/d/'.rawurlencode($m[2]).'/preview';
+    }
+    if ($type === 'pdf' && preg_match('/\.pdf(?:$|\?)/i', $url)) return $url;
+    return null;
+}
+
+function lesson_resource_title(string $url, string $type): string
+{
+    $parts = parse_url($url);
+    $path = rawurldecode((string)($parts['path'] ?? ''));
+    $base = trim(basename($path), '/');
+    if ($base !== '' && $base !== '.') return mb_substr($base, 0, 180);
+    $host = preg_replace('/^www\./i', '', (string)($parts['host'] ?? 'resource'));
+    $label = match ($type) { 'video'=>'Video', 'image'=>'Image', 'pdf'=>'PDF', 'document'=>'Document', default=>'Resource' };
+    return mb_substr($label.' · '.$host, 0, 180);
+}
+
+function lesson_resource_provider(string $url): string
+{
+    $host = strtolower((string)(parse_url($url, PHP_URL_HOST) ?? ''));
+    $host = preg_replace('/^www\./', '', $host) ?: 'external';
+    return match (true) {
+        str_contains($host, 'youtube.com') || $host === 'youtu.be' => 'YouTube',
+        str_contains($host, 'vimeo.com') => 'Vimeo',
+        str_contains($host, 'drive.google.com') || str_contains($host, 'docs.google.com') => 'Google Drive',
+        str_contains($host, 'dropbox.com') => 'Dropbox',
+        $host === '1drv.ms' || str_contains($host, 'onedrive.live.com') => 'OneDrive',
+        default => $host,
+    };
+}
+
 function app_timezone(): string
 {
     $fallback = class_exists('OpenLMS\\Core\\Config') ? (string)\OpenLMS\Core\Config::get('app.timezone', 'UTC') : 'UTC';

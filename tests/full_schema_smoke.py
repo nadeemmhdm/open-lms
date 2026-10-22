@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable SQLite smoke test for Open LMS migrations 001-012."""
+"""Portable SQLite smoke test for Open LMS migrations 001-013."""
 from pathlib import Path
 import os, sqlite3, tempfile
 
@@ -10,7 +10,7 @@ db = sqlite3.connect(path)
 db.execute('PRAGMA foreign_keys=ON')
 try:
     migrations = sorted(ROOT.glob('database/migrations/*_sqlite.sql'))
-    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006','007','008','009','010','011','012']
+    assert [p.name[:3] for p in migrations] == ['001','002','003','004','005','006','007','008','009','010','011','012','013']
     for migration in migrations:
         db.executescript(migration.read_text(encoding='utf-8'))
     db.commit()
@@ -103,7 +103,7 @@ try:
     db.execute("INSERT INTO backup_history(file_name,driver,size_bytes,created_by,created_at) VALUES('test.olmsbak','sqlite',1,?,datetime('now'))", (uid,))
     assert db.execute('PRAGMA foreign_key_check').fetchall() == []
     assert len(tables) >= 72
-    print('PASS: migrations 001-012, required LMS tables, unique constraints and foreign-key integrity.')
+    print('PASS: migrations 001-013, required LMS tables, unique constraints and foreign-key integrity.')
 finally:
     db.close()
     try: os.unlink(path)
