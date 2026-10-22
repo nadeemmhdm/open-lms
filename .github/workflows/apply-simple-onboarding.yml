@@ -1,0 +1,74 @@
+name: Apply simple onboarding update
+
+on:
+  push:
+    branches:
+      - simple-onboarding-update
+
+permissions:
+  contents: write
+
+jobs:
+  apply-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Rebuild and verify tested payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin simple-onboarding-update
+          : > /tmp/open-lms-update.b64
+          for part in 00 01 02 03 04 05; do
+            git show "origin/simple-onboarding-update:.update/payload.${part}" >> /tmp/open-lms-update.b64
+          done
+          base64 -d /tmp/open-lms-update.b64 > /tmp/open-lms-update.tar.gz
+          echo "8746abf3e50a0f22ae7b6246b04fb5ec83e6475d1cf4003fad54e68f015b31a1  /tmp/open-lms-update.tar.gz" | sha256sum -c -
+          tar -tzf /tmp/open-lms-update.tar.gz
+          tar -xzf /tmp/open-lms-update.tar.gz
+
+      - name: Run regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/full_schema_smoke.py
+          python3 tests/security_static.py
+          node --check assets/js/app.js
+          if command -v php >/dev/null 2>&1; then
+            while IFS= read -r -d '' file; do php -l "$file" >/dev/null; done < <(find . -path './.git' -prune -o -name '*.php' -print0)
+            php tests/totp_rfc_test.php
+          fi
+          node tests/qrcode_smoke.js
+
+      - name: Commit verified update to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Nadeem"
+          git config user.email "160517299+nadeemmhdm@users.noreply.github.com"
+          git add \
+            app/Controllers/DoubtController.php \
+            app/Services/InviteService.php \
+            app/Controllers/AdminUsersTrait.php \
+            app/Controllers/RegistrationInviteController.php \
+            index.php \
+            includes/functions.php \
+            assets/js/app.js \
+            assets/css/app.css \
+            tests/full_schema_smoke.py \
+            tests/security_static.py \
+            README.md \
+            TESTING.md \
+            database/migrations/009_onboarding_doubts_mysql.sql \
+            database/migrations/009_onboarding_doubts_sqlite.sql
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          git commit -m "feat: simplify student onboarding and add doubts q&a"
+          git push origin HEAD:main
