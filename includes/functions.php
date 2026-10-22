@@ -14,6 +14,21 @@ function app_url(string $path = ''): string
     return $base . '/' . ltrim($path, '/');
 }
 
+function absolute_app_url(string $path = ''): string
+{
+    $configured = class_exists('OpenLMS\\Core\\Config') ? trim((string)\OpenLMS\Core\Config::get('app.base_url', '')) : '';
+    if ($configured !== '' && filter_var($configured, FILTER_VALIDATE_URL)) {
+        $parts = parse_url($configured);
+        if (is_array($parts) && in_array(strtolower((string)($parts['scheme'] ?? '')), ['http','https'], true)) {
+            return rtrim($configured, '/') . '/' . ltrim($path, '/');
+        }
+    }
+    $host = (string)($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '');
+    if (!preg_match('/^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/', $host)) return app_url($path);
+    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    return ($secure ? 'https://' : 'http://') . $host . app_url($path);
+}
+
 function client_ip(): string
 {
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
@@ -51,6 +66,7 @@ function render_page(string $title, string $content, bool $withShell = true): vo
         <?php if(feature_enabled('fee_management')): ?><?= nav_link('fees','Fees') ?><?php endif; ?>
         <?php if(feature_enabled('parent_portal') && in_array('parent',$user['roles'],true)): ?><?= nav_link('parent-portal','Parent portal') ?><?php endif; ?>
         <?php if(feature_enabled('search')): ?><?= nav_link('search','Search') ?><?php endif; ?>
+        <?= nav_link('profile','My profile') ?>
         <?= nav_link('mfa-setup','Security / MFA') ?>
         <?php if(\OpenLMS\Core\Auth::can('academics.manage')): ?><?= nav_link('academics','Academic setup') ?><?php endif; ?>
         <?php if(\OpenLMS\Core\Auth::isPrivileged()): ?>
@@ -58,9 +74,25 @@ function render_page(string $title, string $content, bool $withShell = true): vo
         <?php endif; ?>
       </nav>
       <div class="sidebar-bottom"><button class="theme-btn" type="button" data-theme-toggle>Theme</button><form method="post" action="<?= e(app_url('?r=logout')) ?>"><input type="hidden" name="_csrf" value="<?= e(\OpenLMS\Core\Csrf::token()) ?>"><button class="nav-link nav-button" type="submit">Sign out</button></form></div>
-    </aside><main class="main"><header class="topbar"><button class="menu-btn" data-menu-toggle aria-label="Toggle menu">☰</button><div></div><div class="user-chip"><span><?= e($user['name']) ?></span><small><?= e($user['email']) ?></small></div></header><div class="page-content"><?= $content ?></div></main></div>
+    </aside><main class="main"><header class="topbar"><button class="menu-btn" data-menu-toggle aria-label="Toggle menu" aria-expanded="true"><span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span></button><div></div><div class="user-chip"><span><?= e($user['name']) ?></span><small><?= e($user['email']) ?></small></div></header><div class="page-content"><?= $content ?></div></main></div>
     <?php else: ?><main class="standalone"><?= $content ?></main><button class="floating-theme theme-btn" type="button" data-theme-toggle>Theme</button><?php endif; ?>
     <script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-1.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-2.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-3.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode-modules-4.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/vendor/openlms-qrcode.js')) ?>" defer></script><script src="<?= e(app_url('assets/js/app.js')) ?>" defer></script></body></html><?php
+}
+
+function render_status_page(int $status, string $title, string $message, ?string $actionLabel = null, ?string $actionUrl = null): void
+{
+    http_response_code($status);
+    $code = in_array($status, [403,404,410,500,503], true) ? (string)$status : 'Error';
+    ob_start(); ?>
+    <div class="status-page">
+      <section class="card status-card">
+        <span class="status-code"><?= e($code) ?></span>
+        <h1><?= e($title) ?></h1>
+        <p class="muted"><?= e($message) ?></p>
+        <?php if($actionLabel && $actionUrl): ?><a class="btn btn-primary" href="<?= e($actionUrl) ?>"><?= e($actionLabel) ?></a><?php endif; ?>
+      </section>
+    </div>
+    <?php render_page($title, ob_get_clean(), false);
 }
 
 function sanitize_rich_text(string $html): string
@@ -135,8 +167,7 @@ function feature_enabled(string $key): bool
 function require_feature(string $key): void
 {
     if (!feature_enabled($key)) {
-        http_response_code(404);
-        render_page('Module disabled', '<div class="card empty-state"><h2>Module unavailable</h2><p>This LMS module is currently disabled by an administrator.</p></div>');
+        render_status_page(404, 'Module unavailable', 'This LMS module is currently disabled or is not available for this account.', 'Back to dashboard', app_url('?r=dashboard'));
         exit;
     }
 }
